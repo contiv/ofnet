@@ -33,7 +33,7 @@ type OfnetDatapath interface {
     PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn)
 
     // Add a local endpoint to forwarding DB
-    AddLocalEndpoint(portNo uint32, macAddr net.HardwareAddr, vlan uint16, ipAddr net.IP) error
+    AddLocalEndpoint(endpoint EndpointInfo) error
 
     // Remove a local endpoint from forwarding DB
     RemoveLocalEndpoint(portNo uint32) error

@@ -76,6 +76,15 @@ func (self *OfnetMaster) RegisterNode(hostAddr *string, ret *bool) error {
 
 // Add a route
 func (self *OfnetMaster) RouteAdd (route *OfnetRoute, ret *bool) error {
+    // Check if we have the route already and which is more recent
+    oldRoute := self.routeDb[route.IpAddr.String()]
+    if (oldRoute != nil) {
+        // If old route has more recent timestamp, nothing to do
+        if (oldRoute.Timestamp.After(route.Timestamp)) {
+            return nil
+        }
+    }
+
     // Save the route in DB
     self.routeDb[route.IpAddr.String()] = route
 
@@ -100,5 +109,35 @@ func (self *OfnetMaster) RouteAdd (route *OfnetRoute, ret *bool) error {
 
 // Delete a route
 func (self *OfnetMaster) RouteDel (route *OfnetRoute, ret *bool) error {
+    // Check if we have the route, if we dont have the route, nothing to do
+    oldRoute := self.routeDb[route.IpAddr.String()]
+    if (oldRoute == nil) {
+        return nil
+    }
+
+    // If existing route has more recent timestamp, nothing to do
+    if (oldRoute.Timestamp.After(route.Timestamp)) {
+        return nil
+    }
+
+    // Delete the route from DB
+    delete(self.routeDb, route.IpAddr.String())
+
+    // Publish it to all agents except where it came from
+    for _, node := range self.agentDb {
+        if (node.HostAddr != route.OriginatorIp.String()) {
+            var resp bool
+
+            log.Infof("Sending DELETE Route: %+v to node %s", route, node.HostAddr)
+
+            client := rpcHub.Client(node.HostAddr, OFNET_AGENT_PORT)
+            err := client.Call("Vrouter.RouteDel", route, &resp)
+            if (err != nil) {
+                log.Errorf("Error sending DELERE route to %s. Err: %v", node.HostAddr, err)
+            }
+        }
+    }
+
+    *ret = true
     return nil
 }

@@ -399,3 +399,29 @@ func (self *Flow) SetTunnelId(tunnelId uint64) error {
 
     return nil
 }
+
+// Delete the flow
+func (self *Flow) Delete() error {
+    // Delete from ofswitch
+    if (self.isInstalled) {
+        // Create a flowmode entry
+        flowMod := openflow13.NewFlowMod()
+        flowMod.Command = openflow13.FC_DELETE
+        flowMod.TableId = self.Table.TableId
+        flowMod.Priority = self.Match.Priority
+        flowMod.Cookie = self.flowId
+        flowMod.OutPort = openflow13.P_ANY
+        flowMod.OutGroup = openflow13.OFPG_ANY
+
+        log.Debugf("Sending DELETE flowmod: %+v", flowMod)
+
+        // Send the message
+        self.Table.Switch.Send(flowMod)
+    }
+
+    // Delete it from the table
+    flowKey := self.flowKey()
+    delete(self.Table.flowDb, flowKey)
+
+    return nil
+}

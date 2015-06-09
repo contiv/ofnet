@@ -55,6 +55,13 @@ type OfnetAgent struct {
     vtepTable   map[string]*uint32      // Map vtep IP to OVS port number
 }
 
+// local End point information
+type EndpointInfo struct {
+    PortNo      uint32
+    MacAddr     net.HardwareAddr
+    Vlan        uint16
+    IpAddr      net.IP
+}
 
 const FLOW_MATCH_PRIORITY = 100     // Priority for all match flows
 const FLOW_MISS_PRIORITY = 1        // priority for table miss flow
@@ -157,13 +164,12 @@ func (self *OfnetAgent) RemoveMaster(masterAddr *string) error {
 
 // Add a local endpoint.
 // This takes ofp port number, mac address, vlan and IP address of the port.
-func (self *OfnetAgent) AddLocalEndpoint(portNo uint32, macAddr net.HardwareAddr,
-                                        vlan uint16, ipAddr net.IP) error {
+func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
     // Add port vlan mapping
-    self.portVlanMap[portNo] = &vlan
+    self.portVlanMap[endpoint.PortNo] = &endpoint.Vlan
 
     // Call the datapath
-    return self.datapath.AddLocalEndpoint(portNo, macAddr, vlan, ipAddr)
+    return self.datapath.AddLocalEndpoint(endpoint)
 }
 
 // Remove local endpoint

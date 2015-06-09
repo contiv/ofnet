@@ -44,6 +44,9 @@ type Vrouter struct {
     // Routing table
     routeTable  map[string]*OfnetRoute  // routes indexed by ip addr
 
+    // Flow Database
+    flowDb      map[string]*ofctrl.Flow // Database of flow entries
+
     // Router Mac to be used
     myRouterMac net.HardwareAddr
 }
@@ -57,6 +60,7 @@ type OfnetRoute struct {
     Timestamp       time.Time   // Timestamp of the last event
 }
 
+// Create a new vrouter instance
 func NewVrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vrouter {
     vrouter := new(Vrouter)
 
@@ -65,6 +69,7 @@ func NewVrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vrouter {
 
     // Create a route table and my router mac
     vrouter.routeTable = make(map[string]*OfnetRoute)
+    vrouter.flowDb = make(map[string]*ofctrl.Flow)
     vrouter.myRouterMac, _ = net.ParseMAC("00:00:11:11:11:11")
 
     // Register for Route rpc callbacks
@@ -73,6 +78,7 @@ func NewVrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vrouter {
     return vrouter
 }
 
+// Handle switch connected notification
 func (self *Vrouter) SwitchConnected(sw *ofctrl.OFSwitch) {
     // Keep a reference to the switch
     self.ofSwitch = sw
@@ -81,7 +87,9 @@ func (self *Vrouter) SwitchConnected(sw *ofctrl.OFSwitch) {
     self.initFgraph()
 }
 
+// Handle switch disconnected notification
 func (self *Vrouter) SwitchDisconnected(sw *ofctrl.OFSwitch) {
+    // FIXME: ??
 }
 
 // Handle incoming packet
@@ -108,23 +116,32 @@ func (self *Vrouter) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
     }
 }
 
-func (self *Vrouter) AddLocalEndpoint(portNo uint32, macAddr net.HardwareAddr,
-                                        vlan uint16, ipAddr net.IP) error {
-
+// Add a local endpoint and install associated local route
+func (self *Vrouter) AddLocalEndpoint(endpoint EndpointInfo) error {
     // Install a flow entry for vlan mapping and point it to IP table
-    portVlanFlow, _ := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+    portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
-                            InputPort: portNo,
+                            InputPort: endpoint.PortNo,
                         })
-    portVlanFlow.SetVlan(vlan)
-    portVlanFlow.Next(self.ipTable)
+    if err != nil {
+        log.Errorf("Error creating portvlan entry. Err: %v", err)
+        return err
+    }
+
+    // Set the vlan and install it
+    portVlanFlow.SetVlan(endpoint.Vlan)
+    err = portVlanFlow.Next(self.ipTable)
+    if err != nil {
+        log.Errorf("Error installing portvlan entry. Err: %v", err)
+        return err
+    }
 
     // build the route to add
     route := OfnetRoute{
-                IpAddr: ipAddr,
+                IpAddr: endpoint.IpAddr,
                 VrfId: 0,       // FIXME: get a VRF
                 OriginatorIp: self.agent.localIp,
-                PortNo: portNo,
+                PortNo: endpoint.PortNo,
                 Timestamp:  time.Now(),
             }
 
@@ -132,24 +149,90 @@ func (self *Vrouter) AddLocalEndpoint(portNo uint32, macAddr net.HardwareAddr,
     self.localRouteAdd(&route)
 
     // Create the output port
-    outPort, _ := self.ofSwitch.NewOutputPort(portNo)
+    outPort, err := self.ofSwitch.NewOutputPort(endpoint.PortNo)
+    if (err != nil) {
+        log.Errorf("Error creating output port %d. Err: %v", endpoint.PortNo, err)
+        return err
+    }
 
     // Install the IP address
-    ipFlow, _ := self.ipTable.NewFlow(ofctrl.FlowMatch{
+    ipFlow, err := self.ipTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
                             Ethertype: 0x0800,
-                            IpDa: &ipAddr,
+                            IpDa: &endpoint.IpAddr,
                         })
-    ipFlow.SetMacDa(macAddr)
+    if (err != nil) {
+        log.Errorf("Error creating flow for route: %+v. Err: %v", route, err)
+        return err
+    }
+
+    // Set Mac addresses
+    ipFlow.SetMacDa(endpoint.MacAddr)
     ipFlow.SetMacSa(self.myRouterMac)
-    ipFlow.Next(outPort)
+
+    // Point the route at output port
+    err = ipFlow.Next(outPort)
+    if (err != nil) {
+        log.Errorf("Error installing flow for route: %+v. Err: %v", route, err)
+        return err
+    }
+
+    // Store the flow
+    self.flowDb[endpoint.IpAddr.String()] = ipFlow
 
     return nil
 }
 
-// Remove local port
+// Find a route by output port number
+// Note: Works only for local ports
+func (self *Vrouter) findLocalRouteByPortno(portNo uint32) *OfnetRoute {
+    for _, route := range self.routeTable {
+        if route.PortNo == portNo {
+            return route
+        }
+    }
+
+    return nil
+}
+
+// Remove local endpoint
 func (self *Vrouter) RemoveLocalEndpoint(portNo uint32) error {
-    // FIXME:
+    // Find the route from local port number
+    route := self.findLocalRouteByPortno(portNo)
+    if route == nil {
+        log.Errorf("Could not find local route ")
+    }
+
+    // Find the flow entry
+    ipFlow := self.flowDb[route.IpAddr.String()]
+    if (ipFlow != nil) {
+        // Delete the Fgraph entry
+        err := ipFlow.Delete()
+        if err != nil {
+            log.Errorf("Error deleting the route: %+v. Err: %v", route, err)
+        }
+    }
+
+    // Remove it from route table
+    delete(self.routeTable, route.IpAddr.String())
+
+    // update timestamp so that this takes priority
+    route.Timestamp = time.Now()
+
+    // Send the route delete to all known masters
+    for masterAddr, _ := range self.agent.masterDb {
+        var resp bool
+
+        log.Infof("Sending DELETE route %+v to master %s", route, masterAddr)
+
+        // Make the RPC call to delete the route on master
+        client := rpcHub.Client(masterAddr, OFNET_MASTER_PORT)
+        err := client.Call("OfnetMaster.RouteDel", route, &resp)
+        if (err != nil) {
+            log.Errorf("Failed to send DELETE route %+v to master %s. Err: %v", route, masterAddr, err)
+        }
+    }
+
     return nil
 }
 
@@ -180,6 +263,7 @@ func (self *Vrouter) AddVlan(vlanId uint16, vni uint32) error {
     return nil
 }
 
+// Remove a vlan
 func (self *Vrouter) RemoveVlan(vlanId uint16, vni uint32) error {
     return nil
 }
@@ -191,6 +275,15 @@ func (self *Vrouter) RouteAdd(route *OfnetRoute, ret *bool) error {
     // If this is a local route we are done
     if (route.OriginatorIp.String() == self.agent.localIp.String()) {
         return nil
+    }
+
+    // Check if we have the route already and which is more recent
+    oldRoute := self.routeTable[route.IpAddr.String()]
+    if (oldRoute != nil) {
+        // If old route has more recent timestamp, nothing to do
+        if (oldRoute.Timestamp.After(route.Timestamp)) {
+            return nil
+        }
     }
 
     // First, add the route to local routing table
@@ -205,29 +298,67 @@ func (self *Vrouter) RouteAdd(route *OfnetRoute, ret *bool) error {
     }
 
     // Install the route in OVS
-
     // Create an output port for the vtep
-    outPort, _ := self.ofSwitch.NewOutputPort(*vtepPort)
+    outPort, err := self.ofSwitch.NewOutputPort(*vtepPort)
+    if (err != nil) {
+        log.Errorf("Error creating output port %d. Err: %v", *vtepPort, err)
+        return err
+    }
 
     // Install the IP address
-    ipFlow, _ := self.ipTable.NewFlow(ofctrl.FlowMatch{
+    ipFlow, err := self.ipTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
                             Ethertype: 0x0800,
                             IpDa: &route.IpAddr,
                         })
+    if (err != nil) {
+        log.Errorf("Error creating flow for route: %+v. Err: %v", route, err)
+        return err
+    }
+
+    // Set Mac addresses
     ipFlow.SetMacDa(self.myRouterMac)
-    // FIXME: set VNI
     // This is strictly not required at the source OVS. Source mac will be
     // overwritten by the dest OVS anyway. We keep the source mac for debugging purposes..
     // ipFlow.SetMacSa(self.myRouterMac)
+
+    // Set VNI
     ipFlow.SetTunnelId(1)   // FIXME: hardcode VNI for now
-    ipFlow.Next(outPort)
+
+    // Point it to output port
+    err = ipFlow.Next(outPort)
+    if (err != nil) {
+        log.Errorf("Error installing flow for route: %+v. Err: %v", route, err)
+        return err
+    }
+
+    // Store it in flow db
+    self.flowDb[route.IpAddr.String()] = ipFlow
 
     return nil
 }
 
 // Delete remote route RPC call from master
 func (self *Vrouter) RouteDel(route *OfnetRoute, ret *bool) error {
+    // If this is a local route we are done
+    if (route.OriginatorIp.String() == self.agent.localIp.String()) {
+        return nil
+    }
+
+    // Find the flow entry
+    ipFlow := self.flowDb[route.IpAddr.String()]
+    if (ipFlow == nil) {
+        // Ignore duplicate delete requests we might receive from multiple
+        // Ofnet masters
+        return nil
+    }
+
+    // Delete the Fgraph entry
+    err := ipFlow.Delete()
+    if err != nil {
+        log.Errorf("Error deleting the route: %+v. Err: %v", route, err)
+    }
+
     return nil
 }
 
