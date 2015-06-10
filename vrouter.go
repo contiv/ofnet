@@ -436,7 +436,7 @@ func (self *Vrouter) initFgraph() error {
     return nil
 }
 
-// Process incoming packet
+// Process incoming ARP packets
 func (self *Vrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
     log.Debugf("processing ARP packet on port %d", inPort)
     switch t := pkt.Data.(type) {
@@ -446,7 +446,13 @@ func (self *Vrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 
         switch arpHdr.Operation {
         case protocol.Type_Request:
-            // FIXME: Send an ARP response only we have a route
+            // Lookup the Dest IP in the routing table
+            route := self.routeTable[arpHdr.IPDst.String()]
+            if route == nil {
+                // If we dont know the IP address, dont send an ARP response
+                log.Infof("Received ARP request for unknown IP: %v", arpHdr.IPDst)
+                return
+            }
 
             // Form an ARP response
             arpResp, _ := protocol.NewARP(protocol.Type_Reply)

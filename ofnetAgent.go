@@ -85,10 +85,16 @@ func NewOfnetAgent(bridge string, datapath string, localIp net.IP) (*OfnetAgent,
     // Create an openflow controller
     agent.ctrler = ofctrl.NewController(bridge, agent)
 
+    // Start listening to controller port
+    go agent.ctrler.Listen(":6633")
+
     // Create rpc server
     // FIXME: Create this only once instead of per ofnet agent instance
     rpcServ := rpcHub.NewRpcServer(OFNET_AGENT_PORT)
     agent.rpcServ = rpcServ
+
+    // Register for Master add/remove events
+    rpcServ.Register(agent)
 
     // Create the datapath
     switch datapath {

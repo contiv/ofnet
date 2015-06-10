@@ -51,26 +51,31 @@ type Controller struct{
     app      AppInterface
 }
 
+const SERVER_MODE = true
+
 // Create a new controller
 func NewController(bridge string, app AppInterface) *Controller {
     c := new(Controller)
 
     // for debug logs
-    //log.SetLevel(log.DebugLevel)
+    // log.SetLevel(log.DebugLevel)
 
     // Save the handler
     c.app = app
 
-    // Connect to unix socket
-    // FIXME: dont hard code bridge name to ovsbr0 here
-    conn, err := net.Dial("unix", "/var/run/openvswitch/" + bridge + ".mgmt")
-    if (err != nil) {
-        log.Fatalf("Failed to connect to unix socket. Err: %v", err)
-        return nil
-    }
+    // Controller does not get incoming packets if it connects over unix sockets.
+    // So, this is disabled for now
+    if (!SERVER_MODE) {
+        // Connect to unix socket
+        conn, err := net.Dial("unix", "/var/run/openvswitch/" + bridge + ".mgmt")
+        if (err != nil) {
+            log.Fatalf("Failed to connect to unix socket. Err: %v", err)
+            return nil
+        }
 
-    // Handle the connection
-    go c.handleConnection(conn)
+        // Handle the connection
+        go c.handleConnection(conn)
+    }
 
     return c
 }
