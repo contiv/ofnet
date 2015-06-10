@@ -5,8 +5,8 @@ Ofnet is a golang library that can be used by Container network drivers or conta
 
 Ofnet Controller supports multiple Software Defined Networking paradigms. They are
 
-  1. **vrouter**    
-    - In this mode IP packates are forwarded to their destination directly using a Vxlan overlay network. Ofnet controller keeps track of all IP addresses in the network and programs OVS to lookup IP destination address and forward it directly. It Proxies all ARP requests so that there is no need for broadcast in the network. 
+  1. **vrouter**
+    - In this mode entire network operates like a giant router. IP packates are forwarded based on their IP dest address using a Vxlan overlay. Ofnet controller keeps track of all IP addresses in the network and programs OVS to lookup IP destination address and forward it using the overlay. It Proxies all ARP requests so that there is no need for broadcast in the network. 
   2. **vxlan bridge**
     - Still in development
   3. **vlan bridge**
@@ -19,7 +19,7 @@ Ofnet Controller supports multiple Software Defined Networking paradigms. They a
 
 As shown above Ofnet Controller consists of Ofnet Agents that run on each host along with OVS and multiple Ofnet Masters. Ofnet agents can connect to any number of Ofnet Masters. Ofnet Masters largely act as state distributors. Ofnet Masters and Agents form an eventually consistent database that can survive multiple node failures, network partitioning and temporary hiccups. Controller state is guaranteed to eventually reach a consistent state.
 
-Ofnet controller supports the concept of multiple networks. Depending on the forwarding paradign, this can be mapped to Tenats(VRF in networking lingo, VPC in cloud lingo), Subnets or bridge domains. 
+Ofnet controller supports the concept of multiple networks. Depending on the forwarding paradign, this can be mapped to Tenats(VRF in networking lingo, VPC in cloud lingo), Subnets or bridge domains.
 
 # Multiple datapath plugins
 ![Datapath Plugins](./docs/DatapathPlugins.jpg "Datapath Plugins")

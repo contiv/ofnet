@@ -203,14 +203,10 @@ func (self *Vrouter) RemoveLocalEndpoint(portNo uint32) error {
         log.Errorf("Could not find local route ")
     }
 
-    // Find the flow entry
-    ipFlow := self.flowDb[route.IpAddr.String()]
-    if (ipFlow != nil) {
-        // Delete the Fgraph entry
-        err := ipFlow.Delete()
-        if err != nil {
-            log.Errorf("Error deleting the route: %+v. Err: %v", route, err)
-        }
+    // Uninstall the route
+    err := self.uninstallRoute(route)
+    if err != nil {
+        log.Errorf("Error uninstalling route. Err: %v", err)
     }
 
     // Remove it from route table
@@ -240,31 +236,48 @@ func (self *Vrouter) RemoveLocalEndpoint(portNo uint32) error {
 // to ofp port number.
 func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
     // Install a flow entry for default VNI/vlan and point it to IP table
-    // FIXME: Need to match on tunnelId and set good vlan id
     portVlanFlow, _ := self.vlanTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
                             InputPort: portNo,
                         })
+    // FIXME: Need to match on tunnelId and set vlan-id per VRF
     portVlanFlow.SetVlan(1)
     portVlanFlow.Next(self.ipTable)
+
+    // FIXME: walk all the routes and see if we can install it
+    //        This could happen if a route made it to us before VTEP
+
 
     return nil
 }
 
 // Remove a VTEP port
 func (self *Vrouter) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
-    // FIXME:
+    // walk all the routes and uninstall the ones pointing at remote host
+    for _, route := range self.routeTable {
+        // Find all the routes pointing at the remote VTEP
+        if route.OriginatorIp.String() == remoteIp.String() {
+            // Uninstall the route from HW
+            err := self.uninstallRoute(route)
+            if err != nil {
+                log.Errorf("Error uninstalling route %+v. Err: %v", route, err)
+            }
+        }
+    }
+
     return nil
 }
 
 // Add a vlan.
 // This is mainly used for mapping vlan id to Vxlan VNI
 func (self *Vrouter) AddVlan(vlanId uint16, vni uint32) error {
+    // FIXME: Add this for multiple VRF support
     return nil
 }
 
 // Remove a vlan
 func (self *Vrouter) RemoveVlan(vlanId uint16, vni uint32) error {
+    // FIXME: Add this for multiple VRF support
     return nil
 }
 
@@ -323,7 +336,9 @@ func (self *Vrouter) RouteAdd(route *OfnetRoute, ret *bool) error {
     // ipFlow.SetMacSa(self.myRouterMac)
 
     // Set VNI
-    ipFlow.SetTunnelId(1)   // FIXME: hardcode VNI for now
+    // FIXME: hardcode VNI for default VRF.
+    // FIXME: We need to use one fabric VNI per VRF
+    ipFlow.SetTunnelId(1)
 
     // Point it to output port
     err = ipFlow.Next(outPort)
@@ -345,19 +360,20 @@ func (self *Vrouter) RouteDel(route *OfnetRoute, ret *bool) error {
         return nil
     }
 
-    // Find the flow entry
-    ipFlow := self.flowDb[route.IpAddr.String()]
-    if (ipFlow == nil) {
-        // Ignore duplicate delete requests we might receive from multiple
-        // Ofnet masters
+    // Ignore duplicate delete requests we might receive from multiple
+    // Ofnet masters
+    if self.routeTable[route.IpAddr.String()] == nil {
         return nil
     }
 
-    // Delete the Fgraph entry
-    err := ipFlow.Delete()
+    // Uninstall the route
+    err := self.uninstallRoute(route)
     if err != nil {
-        log.Errorf("Error deleting the route: %+v. Err: %v", route, err)
+        log.Errorf("Error uninstalling route. Err: %v", err)
     }
+
+    // Remove it from route table
+    delete(self.routeTable, route.IpAddr.String())
 
     return nil
 }
@@ -383,6 +399,25 @@ func (self *Vrouter) localRouteAdd(route *OfnetRoute) error {
 
     return nil
 }
+
+// Remove a route from OVS
+func (self *Vrouter) uninstallRoute(route *OfnetRoute) error {
+    // Find the flow entry
+    ipFlow := self.flowDb[route.IpAddr.String()]
+    if (ipFlow == nil) {
+        log.Errorf("Error finding the flow for route: %+v", route)
+        return errors.New("Flow not found")
+    }
+
+    // Delete the Fgraph entry
+    err := ipFlow.Delete()
+    if err != nil {
+        log.Errorf("Error deleting the route: %+v. Err: %v", route, err)
+    }
+
+    return err
+}
+
 
 const VLAN_TBL_ID = 1
 const IP_TBL_ID = 2

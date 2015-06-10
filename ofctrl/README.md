@@ -7,6 +7,9 @@ This library implements a simple Openflow1.3 controller API
     // Create a controller
     ctrler := ofctrl.NewController(&app)
 
+    // Listen for connections
+    ctrler.Listen(":6633")
+
 
 This creates a new controller and registers the app for event callbacks. The app needs to implement following interface to get callbacks when an openflow switch connects to the controller.
 
@@ -53,8 +56,6 @@ This creates a new controller and registers the app for event callbacks. The app
     ctrler.Listen(":6633")
 
 # Working with OpenVswitch
-
-By default ofctrl tries to connect to local OVS on the host using unix named socket located at  /var/run/openvswitch/<bridge-name>.mgmt. If you want OVS switch to connect to controller on a specified port, use following commands
 
 ### Command to make ovs connect to controller:
 `ovs-vsctl set-controller <bridge-name> tcp:<ip-addr>:<port>`
