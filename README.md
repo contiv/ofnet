@@ -6,9 +6,10 @@ Ofnet is a golang library that can be used by Container network drivers or conta
 Ofnet Controller supports multiple Software Defined Networking paradigms. They are
 
   1. **vrouter**
-    - In this mode entire network operates like a giant router. IP packates are forwarded based on their IP dest address using a Vxlan overlay. Ofnet controller keeps track of all IP addresses in the network and programs OVS to lookup IP destination address and forward it using the overlay. It Proxies all ARP requests so that there is no need for broadcast in the network. 
+    - In this mode entire network operates like a giant router. IP packates are forwarded based on their IP dest address using a Vxlan overlay. Ofnet controller keeps track of all IP addresses in the network and programs OVS to lookup IP destination address and forward it using the overlay. It Proxies all ARP requests so that there is no need for broadcast in the network.
   2. **vxlan bridge**
     - Still in development
+    - In this mode each OVS acts as a VXLAN switch and together they emulate multiple bridge domains. This mode required OVS 2.3.1 or higher
   3. **vlan bridge**
     - Still in development
 

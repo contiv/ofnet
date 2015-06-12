@@ -34,6 +34,7 @@ type OFSwitch struct {
     tableDb         map[uint8]*Table
     dropAction      *Output
     sendToCtrler    *Output
+    outputPorts     map[uint32]*Output
 }
 
 var switchDb map[string]*OFSwitch = make(map[string]*OFSwitch)

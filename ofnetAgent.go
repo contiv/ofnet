@@ -64,13 +64,14 @@ type EndpointInfo struct {
 }
 
 const FLOW_MATCH_PRIORITY = 100     // Priority for all match flows
+const FLOW_FLOOD_PRIORITY = 10      // Priority for flood entries
 const FLOW_MISS_PRIORITY = 1        // priority for table miss flow
 
 const OFNET_MASTER_PORT = 9001
 const OFNET_AGENT_PORT  = 9002
 
 // Create a new Ofnet agent and initialize it
-func NewOfnetAgent(bridge string, datapath string, localIp net.IP) (*OfnetAgent, error) {
+func NewOfnetAgent(bridge string, dpName string, localIp net.IP) (*OfnetAgent, error) {
     agent := new(OfnetAgent)
 
     // Init params
@@ -97,11 +98,13 @@ func NewOfnetAgent(bridge string, datapath string, localIp net.IP) (*OfnetAgent,
     rpcServ.Register(agent)
 
     // Create the datapath
-    switch datapath {
+    switch dpName {
     case "vrouter":
         agent.datapath = NewVrouter(agent, rpcServ)
+    case "vxlan":
+        agent.datapath = NewVxlan(agent, rpcServ)
     default:
-        log.Fatalf("Unknown Datapath %s", datapath)
+        log.Fatalf("Unknown Datapath %s", dpName)
     }
 
     // Return it
@@ -110,7 +113,7 @@ func NewOfnetAgent(bridge string, datapath string, localIp net.IP) (*OfnetAgent,
 
 // Handle switch connected event
 func (self *OfnetAgent) SwitchConnected(sw *ofctrl.OFSwitch) {
-    log.Infof("Switch %v connected", sw.DPID())
+    log.Infof("Switch %v connectedd", sw.DPID())
 
     // store it for future use.
     self.ofSwitch = sw

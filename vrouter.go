@@ -83,6 +83,8 @@ func (self *Vrouter) SwitchConnected(sw *ofctrl.OFSwitch) {
     // Keep a reference to the switch
     self.ofSwitch = sw
 
+    log.Infof("Switch connected(vrouter). installing flows")
+    
     // Init the Fgraph
     self.initFgraph()
 }
@@ -149,7 +151,7 @@ func (self *Vrouter) AddLocalEndpoint(endpoint EndpointInfo) error {
     self.localRouteAdd(&route)
 
     // Create the output port
-    outPort, err := self.ofSwitch.NewOutputPort(endpoint.PortNo)
+    outPort, err := self.ofSwitch.OutputPort(endpoint.PortNo)
     if (err != nil) {
         log.Errorf("Error creating output port %d. Err: %v", endpoint.PortNo, err)
         return err
@@ -312,7 +314,7 @@ func (self *Vrouter) RouteAdd(route *OfnetRoute, ret *bool) error {
 
     // Install the route in OVS
     // Create an output port for the vtep
-    outPort, err := self.ofSwitch.NewOutputPort(*vtepPort)
+    outPort, err := self.ofSwitch.OutputPort(*vtepPort)
     if (err != nil) {
         log.Errorf("Error creating output port %d. Err: %v", *vtepPort, err)
         return err

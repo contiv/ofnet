@@ -26,8 +26,9 @@ import (
 
 // Initialize the fgraph elements on the switch
 func (self *OFSwitch) initFgraph() error {
-    // Create the table DB
+    // Create the DBs
     self.tableDb = make(map[uint8]*Table)
+    self.outputPorts = make(map[uint32]*Output)
 
     // Create the table 0
     table := new(Table)
@@ -47,6 +48,13 @@ func (self *OFSwitch) initFgraph() error {
     sendToCtrler.outputType = "toController"
     sendToCtrler.portNo = openflow13.P_CONTROLLER
     self.sendToCtrler = sendToCtrler
+
+    // Clear all existing flood lists
+    groupMod := openflow13.NewGroupMod()
+    groupMod.GroupId = openflow13.OFPG_ALL
+    groupMod.Command = openflow13.OFPGC_DELETE
+    groupMod.Type = openflow13.OFPGT_ALL
+    self.Send(groupMod)
 
     return nil
 }
@@ -88,13 +96,19 @@ func (self *OFSwitch) DefaultTable() *Table {
     return self.tableDb[0]
 }
 
-// Create a new output graph element
-func (self *OFSwitch) NewOutputPort(portNo uint32) (*Output, error) {
+// Return a output graph element for the port
+func (self *OFSwitch) OutputPort(portNo uint32) (*Output, error) {
+    if self.outputPorts[portNo] != nil {
+        return self.outputPorts[portNo], nil
+    }
+
+    // Create a new output element
     output := new(Output)
     output.outputType = "port"
     output.portNo = portNo
 
-    // FIXME: store all outputs in a DB
+    // store all outputs in a DB
+    self.outputPorts[portNo] = output
 
     return output, nil
 }
@@ -119,6 +133,9 @@ func (self *OFSwitch) NewFlood() (*Flood, error) {
     flood.Switch = self
     flood.GroupId = uniqueGroupId
     uniqueGroupId += 1
+
+    // Install it in HW right away
+    flood.install()
 
     return flood, nil
 }

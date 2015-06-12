@@ -19,7 +19,7 @@ package ofctrl
 import (
     "github.com/shaleman/libOpenflow/openflow13"
 
-    // log "github.com/Sirupsen/logrus"
+    log "github.com/Sirupsen/logrus"
 )
 
 // Flood Fgraph element
@@ -38,6 +38,11 @@ func (self *Flood) Type() string {
 
 // instruction set for output element
 func (self *Flood) GetFlowInstr() openflow13.Instruction {
+    // If there are no ports in the flood entry, return
+    if !self.isInstalled {
+        return nil
+    }
+
     groupInstr := openflow13.NewInstrApplyActions()
     groupAct := openflow13.NewActionGroup(self.GroupId)
     groupInstr.AddAction(groupAct, false)
@@ -56,6 +61,7 @@ func (self *Flood) AddOutput(out *Output) error {
 // Install a group entry in OF switch
 func (self *Flood) install() error {
     groupMod := openflow13.NewGroupMod()
+    groupMod.GroupId = self.GroupId
 
     // Change the OP to modify if it was already installed
     if (self.isInstalled) {
@@ -73,6 +79,10 @@ func (self *Flood) install() error {
             // Create a new bucket for each port
             bkt := openflow13.NewBucket()
 
+            // Always remove vlan tag
+            popVlan := openflow13.NewActionPopVlan()
+            bkt.AddAction(popVlan)
+
             // Add the output action to the bucket
             bkt.AddAction(act)
 
@@ -80,6 +90,8 @@ func (self *Flood) install() error {
             groupMod.AddBucket(*bkt)
         }
     }
+
+    log.Infof("Installing Group entry: %+v", groupMod)
 
     // Send it to the switch
     self.Switch.Send(groupMod)
