@@ -28,7 +28,13 @@ type Flood struct {
     GroupId     uint32          // Unique id for the openflow group
     isInstalled bool            // Is this installed in the datapath
 
-    FloodList   []*Output       // List of output ports to flood to
+    FloodList   []FloodOutput   // List of output ports to flood to
+}
+
+type FloodOutput struct {
+    outPort     *Output
+    isTunnel    bool
+    tunnelId    uint64
 }
 
 // Fgraph element type for the output
@@ -52,7 +58,15 @@ func (self *Flood) GetFlowInstr() openflow13.Instruction {
 
 // Add a new Output to group element
 func (self *Flood) AddOutput(out *Output) error {
-    self.FloodList = append(self.FloodList, out)
+    self.FloodList = append(self.FloodList, FloodOutput{out, false, 0})
+
+    // Install in the HW
+    return self.install()
+}
+
+// Add a new Output to group element
+func (self *Flood) AddTunnelOutput(out *Output, tunnelId uint64) error {
+    self.FloodList = append(self.FloodList, FloodOutput{out, true, tunnelId})
 
     // Install in the HW
     return self.install()
@@ -74,10 +88,17 @@ func (self *Flood) install() error {
     // Loop thru all output ports and add it to group bucket
     for _, output := range self.FloodList {
         // Get the output action from output entry
-        act := output.GetOutAction()
+        act := output.outPort.GetOutAction()
         if (act != nil) {
             // Create a new bucket for each port
             bkt := openflow13.NewBucket()
+
+            // Set tunnel Id if required
+            if output.isTunnel {
+                tunnelField := openflow13.NewTunnelIdField(output.tunnelId)
+                setTunnel := openflow13.NewActionSetField(*tunnelField)
+                bkt.AddAction(setTunnel)
+            }
 
             // Always remove vlan tag
             popVlan := openflow13.NewActionPopVlan()

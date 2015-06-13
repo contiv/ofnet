@@ -38,6 +38,9 @@ type FlowMatch struct {
     IpSaMask        *net.IP
     IpDa            *net.IP
     IpDaMask        *net.IP
+    Metadata        *uint64
+    MetadataMask    *uint64
+    TunnelId        uint64
 }
 
 // additional actions in flow's instruction set
@@ -47,6 +50,7 @@ type FlowAction struct {
     macAddr         net.HardwareAddr    // Mac address to set
     tunnelId        uint64      // Tunnel Id (used for setting VNI)
     metadata        uint64      // Metadata in case of "setMetadata"
+    metadataMask    uint64      // Metadata mask
 }
 
 // State of a flow entry
@@ -141,6 +145,21 @@ func (self *Flow) xlateMatch() openflow13.Match {
         }
     }
 
+    if (self.Match.Metadata != nil) {
+        if (self.Match.MetadataMask != nil) {
+            metadataField := openflow13.NewMetadataField(*self.Match.Metadata, self.Match.MetadataMask)
+            ofMatch.AddField(*metadataField)
+        } else {
+            metadataField := openflow13.NewMetadataField(*self.Match.Metadata, nil)
+            ofMatch.AddField(*metadataField)
+        }
+    }
+
+    if (self.Match.TunnelId != 0) {
+            tunnelIdField := openflow13.NewTunnelIdField(self.Match.TunnelId)
+            ofMatch.AddField(*tunnelIdField)
+    }
+
     return *ofMatch
 }
 
@@ -179,7 +198,16 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             log.Infof("flow install. Added pushvlan action: %+v, setVlan actions: %+v",
                             pushVlanAction, setVlanAction)
 
+        case "popVlan":
+            // Create pop vln action
+            popVlan := openflow13.NewActionPopVlan()
 
+            // Add it to instruction
+            actInstr.AddAction(popVlan, true)
+            addActn = true
+
+            log.Infof("flow install. Added popVlan action: %+v", popVlan)
+            
         case "setMacDa":
             // Set Outer MacDA field
             macDaField := openflow13.NewEthDstField(flowAction.macAddr, nil)
@@ -217,7 +245,7 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
 
         case "setMetadata":
             // Set Metadata instruction
-            metadataInstr := openflow13.NewInstrWriteMetadata(flowAction.metadata, 0)
+            metadataInstr := openflow13.NewInstrWriteMetadata(flowAction.metadata, flowAction.metadataMask)
 
             // Add the instruction to flowmod
             flowMod.AddInstruction(metadataInstr)
@@ -329,6 +357,23 @@ func (self *Flow) SetVlan(vlanId uint16) error {
     return nil
 }
 
+// Special actions on the flow to set vlan id
+func (self *Flow) PopVlan() error {
+    action := new(FlowAction)
+    action.actionType = "popVlan"
+
+    // Add to the action list
+    // FIXME: detect duplicates
+    self.flowActions = append(self.flowActions, action)
+
+    // If the flow entry was already installed, re-install it
+    if (self.isInstalled) {
+        self.install()
+    }
+
+    return nil
+}
+
 // Special actions on the flow to set mac dest addr
 func (self *Flow) SetMacDa(macDa net.HardwareAddr) error {
     action := new(FlowAction)
@@ -366,10 +411,11 @@ func (self *Flow) SetMacSa(macSa net.HardwareAddr) error {
 }
 
 // Special actions on the flow to set metadata
-func (self *Flow) SetMetadata(metadata uint64) error {
+func (self *Flow) SetMetadata(metadata , metadataMask uint64) error {
     action := new(FlowAction)
-    action.actionType = "setMetadata"
-    action.metadata   = metadata
+    action.actionType   = "setMetadata"
+    action.metadata     = metadata
+    action.metadataMask = metadataMask
 
     // Add to the action list
     // FIXME: detect duplicates

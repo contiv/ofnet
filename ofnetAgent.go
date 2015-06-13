@@ -120,6 +120,9 @@ func (self *OfnetAgent) SwitchConnected(sw *ofctrl.OFSwitch) {
 
     // Inform the datapath
     self.datapath.SwitchConnected(sw)
+
+    // add default vlan
+    self.AddVlan(1, 1)
 }
 
 // Handle switch disconnect event

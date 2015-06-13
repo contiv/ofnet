@@ -33,6 +33,9 @@ type OfnetMaster struct {
 
     // Route Database
     routeDb     map[string]*OfnetRoute
+
+    // Mac route database
+    macRouteDb  map[string]*MacRoute
 }
 
 // Information about each node
@@ -46,8 +49,9 @@ func NewOfnetMaster() *OfnetMaster {
     master := new(OfnetMaster)
 
     // Init params
-    master.agentDb = make(map[string]*OfnetNode)
-    master.routeDb = make(map[string]*OfnetRoute)
+    master.agentDb    = make(map[string]*OfnetNode)
+    master.routeDb    = make(map[string]*OfnetRoute)
+    master.macRouteDb = make(map[string]*MacRoute)
 
     // Create a new RPC server
     master.rpcServer = rpcHub.NewRpcServer(9001)
@@ -134,6 +138,75 @@ func (self *OfnetMaster) RouteDel (route *OfnetRoute, ret *bool) error {
             err := client.Call("Vrouter.RouteDel", route, &resp)
             if (err != nil) {
                 log.Errorf("Error sending DELERE route to %s. Err: %v", node.HostAddr, err)
+            }
+        }
+    }
+
+    *ret = true
+    return nil
+}
+
+
+// Add a mac route
+func (self *OfnetMaster) MacRouteAdd (macRoute *MacRoute, ret *bool) error {
+    // Check if we have the route already and which is more recent
+    oldRoute := self.macRouteDb[macRoute.MacAddrStr]
+    if (oldRoute != nil) {
+        // If old route has more recent timestamp, nothing to do
+        if (oldRoute.Timestamp.After(macRoute.Timestamp)) {
+            return nil
+        }
+    }
+
+    // Save the route in DB
+    self.macRouteDb[macRoute.MacAddrStr] = macRoute
+
+    // Publish it to all agents except where it came from
+    for _, node := range self.agentDb {
+        if (node.HostAddr != macRoute.OriginatorIp.String()) {
+            var resp bool
+
+            log.Infof("Sending MacRoute: %+v to node %s", macRoute, node.HostAddr)
+
+            client := rpcHub.Client(node.HostAddr, OFNET_AGENT_PORT)
+            err := client.Call("Vxlan.MacRouteAdd", macRoute, &resp)
+            if (err != nil) {
+                log.Errorf("Error adding route to %s. Err: %v", node.HostAddr, err)
+            }
+        }
+    }
+
+    *ret = true
+    return nil
+}
+
+// Delete a mac route
+func (self *OfnetMaster) MacRouteDel (macRoute *MacRoute, ret *bool) error {
+    // Check if we have the route, if we dont have the route, nothing to do
+    oldRoute := self.macRouteDb[macRoute.MacAddrStr]
+    if (oldRoute == nil) {
+        return nil
+    }
+
+    // If existing route has more recent timestamp, nothing to do
+    if (oldRoute.Timestamp.After(macRoute.Timestamp)) {
+        return nil
+    }
+
+    // Delete the route from DB
+    delete(self.macRouteDb, macRoute.MacAddrStr)
+
+    // Publish it to all agents except where it came from
+    for _, node := range self.agentDb {
+        if (node.HostAddr != macRoute.OriginatorIp.String()) {
+            var resp bool
+
+            log.Infof("Sending DELETE MacRoute: %+v to node %s", macRoute, node.HostAddr)
+
+            client := rpcHub.Client(node.HostAddr, OFNET_AGENT_PORT)
+            err := client.Call("Vxlan.MacRouteDel", macRoute, &resp)
+            if (err != nil) {
+                log.Errorf("Error sending DELERE mac route to %s. Err: %v", node.HostAddr, err)
             }
         }
     }
