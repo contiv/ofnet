@@ -8,8 +8,7 @@ Ofnet Controller supports multiple Software Defined Networking paradigms. They a
   1. **vrouter**
     - In this mode entire network operates like a giant router. IP packates are forwarded based on their IP dest address using a Vxlan overlay. Ofnet controller keeps track of all IP addresses in the network and programs OVS to lookup IP destination address and forward it using the overlay. It Proxies all ARP requests so that there is no need for broadcast in the network.
   2. **vxlan bridge**
-    - Still in development
-    - In this mode each OVS acts as a VXLAN switch and together they emulate multiple bridge domains. This mode required OVS 2.3.1 or higher
+    - In this mode each OVS acts as a VXLAN switch and together they emulate multiple bridge domains. This mode requires OVS 2.3.1 or higher.
   3. **vlan bridge**
     - Still in development
 
@@ -25,6 +24,6 @@ Ofnet controller supports the concept of multiple networks. Depending on the for
 # Multiple datapath plugins
 ![Datapath Plugins](./docs/DatapathPlugins.jpg "Datapath Plugins")
 
-Ofnet Controller supports multiple data path plugins. Currently only vrouter plugin is implemented. Vxlan and Vlan plugins are in development. These plugins use Ofctrl library to program Flows in OVS. Please see Ofctrl subdirectory on more details.
+Ofnet Controller supports multiple data path plugins. Currently vrouter and vxlan plugins are implemented. Vlan plugin is in development. These plugins use Ofctrl library to program Flows in OVS. Please see Ofctrl subdirectory on more details.
 
 # Usage
