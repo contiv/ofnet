@@ -17,6 +17,8 @@ package ofctrl
 // This file implements the forwarding graph API for the Flood element
 
 import (
+    "errors"
+
     "github.com/shaleman/libOpenflow/openflow13"
 
     log "github.com/Sirupsen/logrus"
@@ -72,6 +74,27 @@ func (self *Flood) AddTunnelOutput(out *Output, tunnelId uint64) error {
     return self.install()
 }
 
+// Remove a port from flood list
+func (self *Flood) RemoveOutput(out *Output) error {
+    // walk all flood list entries and see if it matches the output port
+    for idx, output := range self.FloodList {
+        if output.outPort == out {
+            // Remove from the flood list. strange golang syntax to remove an element from slice
+            self.FloodList = append(self.FloodList[:idx], self.FloodList[idx+1:]...)
+
+            // Re-install the flood list with removed port
+            return self.install()
+        }
+    }
+
+    return errors.New("Output not found")
+}
+
+// Return number of ports in flood list
+func (self *Flood) NumOutput() int {
+    return len(self.FloodList)
+}
+
 // Install a group entry in OF switch
 func (self *Flood) install() error {
     groupMod := openflow13.NewGroupMod()
@@ -119,6 +142,23 @@ func (self *Flood) install() error {
 
     // Mark it as installed
     self.isInstalled = true
+
+    return nil
+}
+
+// Delete a flood list
+func (self *Flood) Delete() error {
+    // Remove it from OVS if its installed
+    if (self.isInstalled) {
+        groupMod := openflow13.NewGroupMod()
+        groupMod.GroupId = self.GroupId
+        groupMod.Command = openflow13.OFPGC_DELETE
+
+        log.Infof("Deleting Group entry: %+v", groupMod)
+
+        // Send it to the switch
+        self.Switch.Send(groupMod)
+    }
 
     return nil
 }

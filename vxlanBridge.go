@@ -33,16 +33,16 @@ import (
 // VXLAN tables are structured as follows
 //
 // +-------+
-// | Valid |                                               +--------------+
-// | Pkts  +-->+-------+                               +-->| Ucast Output |
-// +-------+   | Vlan  |   +----------+                |   +--------------+
-//             | Table +-->| Mac Src  |   +---------+  |
-//             +-------+   | Learning +-->| Mac Dst |  |   +--------+
-//                         +----------+   | Lookup  +--+-->| Flood  |
-//                                        +---------+      | Filter |
-//                                                         +--+-----+
-//                                                            |
-//                                     +--------------------------+
+// | Valid |
+// | Pkts  +-->+-------+
+// +-------+   | Vlan  |   +----------+
+//             | Table +-->| Mac Src  |   +---------+
+//             +-------+   | Learning +-->| Mac Dst |      +--------------+
+//                         +----------+   | Lookup  +--+-->| Ucast Output |
+//                                        +---------+  |   +--------------+
+//                                                     |
+//                                                     |
+//                                     +---------------+----------+
 //                                     V                          V
 //                            +------------------+    +----------------------+
 //                            | Local Only Flood |    | Local + Remote Flood |
@@ -62,8 +62,7 @@ type Vxlan struct {
     // Fgraph tables
     inputTable      *ofctrl.Table       // Packet lookup starts here
     vlanTable       *ofctrl.Table       // Vlan Table. map port or VNI to vlan
-    macDestTable    *ofctrl.Table
-    floodTable      *ofctrl.Table
+    macDestTable    *ofctrl.Table       // Destination mac lookup
 
     // Flow Database
     macFlowDb       map[string]*ofctrl.Flow // Database of flow entries
@@ -125,6 +124,7 @@ func (self *Vxlan) SwitchDisconnected(sw *ofctrl.OFSwitch) {
 
 // Handle incoming packet
 func (self *Vxlan) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
+    // Ignore all incoming packets for now
 }
 
 // Add a local endpoint and install associated local route
@@ -162,6 +162,9 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
     macFlow.PopVlan()
     macFlow.Next(output)
 
+    // Save the flow in DB
+    self.macFlowDb[endpoint.MacAddr.String()] = macFlow
+
     // Build the mac route
     macRoute := MacRoute{
                     MacAddrStr: endpoint.MacAddr.String(),
@@ -172,7 +175,7 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
                 }
 
     // Advertize the route to master
-    err = self.localRouteAdd(&macRoute)
+    err = self.localMacRouteAdd(&macRoute)
     if (err != nil) {
         log.Errorf("Failed to add route %+v to master. Err: %v", macRoute, err)
         return err
@@ -181,9 +184,43 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
     return nil
 }
 
+// Find a mac by output port number
+// Note: Works only for local ports
+// FIXME: remove this function and add a mapping between local portNo and macRoute
+func (self *Vxlan) findLocalMacRouteByPortno(portNo uint32) *MacRoute {
+    for _, macRoute := range self.macRouteDb {
+        if macRoute.PortNo == portNo {
+            return macRoute
+        }
+    }
+
+    return nil
+}
+
 // Remove local endpoint
 func (self *Vxlan) RemoveLocalEndpoint(portNo uint32) error {
-    return nil
+    // find the mac route
+    macRoute := self.findLocalMacRouteByPortno(portNo)
+    if macRoute == nil {
+        log.Errorf("Local mac route not found for port: %d", portNo)
+        return errors.New("Local mac route not found")
+    }
+
+    // Remove the port from flood lists
+    vlanId := self.agent.vniVlanMap[macRoute.Vni]
+    vlan := self.vlanDb[*vlanId]
+    output, _ := self.ofSwitch.OutputPort(portNo)
+    vlan.localFlood.RemoveOutput(output)
+    vlan.allFlood.RemoveOutput(output)
+
+    // Uninstall the flow
+    err := self.uninstallMacRoute(macRoute)
+    if err != nil {
+        log.Errorf("Error Uninstalling mac route: %+v. Err: %v", macRoute, err)
+    }
+
+    // Remove the route from local DB and Advertize delete
+    return self.localMacRouteDel(macRoute)
 }
 
 // Add virtual tunnel end point. This is mainly used for mapping remote vtep IP
@@ -215,11 +252,32 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
         output, _ := self.ofSwitch.OutputPort(portNo)
         vlan.allFlood.AddTunnelOutput(output, uint64(*vni))
     }
+
     return nil
 }
 
 // Remove a VTEP port
 func (self *Vxlan) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
+    // Remove the VTEP from flood lists
+    output, _ := self.ofSwitch.OutputPort(portNo)
+    for _, vlan := range self.vlanDb {
+        // Walk all vlans and remove from flood lists
+        vlan.allFlood.RemoveOutput(output)
+    }
+
+    // FIXME: uninstall vlan-vni mapping.
+
+    // Walk all routes and remove anything pointing at this VTEP
+    for _, macRoute := range self.macRouteDb {
+        // If it originated from this remote host, uninstall the flow
+        if macRoute.OriginatorIp.String() == remoteIp.String() {
+            err := self.uninstallMacRoute(macRoute)
+            if err != nil {
+                log.Errorf("Error uninstalling mac route: %+v. Err: %v", macRoute, err)
+            }
+        }
+    }
+
     return nil
 }
 
@@ -285,11 +343,35 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 
 // Remove a vlan
 func (self *Vxlan) RemoveVlan(vlanId uint16, vni uint32) error {
+    vlan := self.vlanDb[vlanId]
+    if vlan == nil {
+        log.Fatalf("Could not find the vlan %d", vlanId)
+    }
+
+    // Make sure the flood lists are empty
+    if (vlan.allFlood.NumOutput() != 0) || (vlan.localFlood.NumOutput() != 0) {
+        log.Fatalf("VLAN flood list is not empty")
+    }
+
+    // make sure there are no mac routes still installed in this vlan
+    for _, macRoute := range self.macRouteDb {
+        if macRoute.Vni == vni {
+            log.Fatalf("Vlan %d still has routes. Route: %+v", vlanId, macRoute)
+        }
+    }
+
+    // Uninstall the flood lists
+    vlan.allFlood.Delete()
+    vlan.localFlood.Delete()
+
+    // Remove it from DB
+    delete(self.vlanDb, vlanId)
+
     return nil
 }
 
 // Mac route add rpc call from master
-func (self *Vxlan) MacRouteAdd (macRoute *MacRoute, ret *bool) error {
+func (self *Vxlan) MacRouteAdd(macRoute *MacRoute, ret *bool) error {
     log.Infof("Received mac route: %+v", macRoute)
 
     // If this is a local route we are done
@@ -345,11 +427,32 @@ func (self *Vxlan) MacRouteAdd (macRoute *MacRoute, ret *bool) error {
 // Mac route delete rpc call from master
 func (self *Vxlan) MacRouteDel (macRoute *MacRoute, ret *bool) error {
     log.Infof("Received DELETE mac route: %+v", macRoute)
+
+    // If this is a local route we are done
+    if (macRoute.OriginatorIp.String() == self.agent.localIp.String()) {
+        return nil
+    }
+
+    // Ignore duplicate delete requests we might receive from multiple
+    // Ofnet masters
+    if self.macRouteDb[macRoute.MacAddrStr] == nil {
+        return nil
+    }
+
+    // Uninstall the route
+    err := self.uninstallMacRoute(macRoute)
+    if err != nil {
+        log.Errorf("Error uninstalling mac route %+v. Err: %v", macRoute, err)
+    }
+
+    // Remove it from route table
+    delete(self.macRouteDb, macRoute.MacAddrStr)
+
     return nil
 }
 
 // Add a local route to routing table and distribute it
-func (self *Vxlan) localRouteAdd(macRoute *MacRoute) error {
+func (self *Vxlan) localMacRouteAdd(macRoute *MacRoute) error {
     // First, add the route to local routing table
     self.macRouteDb[macRoute.MacAddrStr] = macRoute
 
@@ -371,8 +474,49 @@ func (self *Vxlan) localRouteAdd(macRoute *MacRoute) error {
     return nil
 }
 
+// Delete a local route and inform the master
+func (self *Vxlan) localMacRouteDel(macRoute *MacRoute) error {
+    // delete the route from local routing table
+    delete(self.macRouteDb, macRoute.MacAddrStr)
+
+    // Send the DELETE to all known masters
+    for masterAddr, _ := range self.agent.masterDb {
+        var resp bool
+
+        log.Infof("Sending DELETE macRoute %+v to master %s", macRoute, masterAddr)
+
+        // Make the RPC call to add the route to master
+        client := rpcHub.Client(masterAddr, OFNET_MASTER_PORT)
+        err := client.Call("OfnetMaster.MacRouteDel", macRoute, &resp)
+        if (err != nil) {
+            log.Errorf("Failed to DELETE route %+v to master %s. Err: %v", macRoute, masterAddr, err)
+            return err
+        }
+    }
+
+    return nil
+}
+
+// Uninstall mac route from OVS
+func (self *Vxlan) uninstallMacRoute(macRoute *MacRoute) error {
+    // find the flow
+    macFlow := self.macFlowDb[macRoute.MacAddrStr]
+    if macFlow == nil {
+        log.Errorf("Could not find the flow for macRoute: %+v", macRoute)
+        return errors.New("Mac flow not found")
+    }
+
+    // Delete the flow
+    err := macFlow.Delete()
+    if err != nil {
+        log.Errorf("Error deleting mac flow: %+v. Err: %v", macFlow, err)
+    }
+
+    return err
+}
+
+
 const MAC_DEST_TBL_ID = 3
-const FLOOD_TBL_ID = 4
 
 // initialize Fgraph on the switch
 func (self *Vxlan) initFgraph() error {
@@ -384,7 +528,6 @@ func (self *Vxlan) initFgraph() error {
     self.inputTable = sw.DefaultTable()
     self.vlanTable, _ = sw.NewTable(VLAN_TBL_ID)
     self.macDestTable, _ = sw.NewTable(MAC_DEST_TBL_ID)
-    self.floodTable, _ = sw.NewTable(FLOOD_TBL_ID)
 
     //Create all drop entries
     // Drop mcast source mac
@@ -396,6 +539,11 @@ func (self *Vxlan) initFgraph() error {
                         })
     bcastSrcFlow.Next(sw.DropAction())
 
+    // FIXME: Add additional checks on:
+    //  Drop STP packets
+    //  Send LLDP packets to controller
+    //  Send LACP packets to controller
+    //  Drop all other reserved mcast packets in 01-80-C2 range.
 
     // Send all valid packets to vlan table
     // This is installed at lower priority so that all packets that miss above
