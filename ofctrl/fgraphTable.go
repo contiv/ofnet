@@ -21,7 +21,7 @@ import (
 
     "github.com/shaleman/libOpenflow/openflow13"
 
-    //log "github.com/Sirupsen/logrus"
+    log "github.com/Sirupsen/logrus"
 )
 
 // Fgraph table element
@@ -43,7 +43,7 @@ func (self *Table) GetFlowInstr() openflow13.Instruction {
 }
 
 // FIXME: global unique flow cookie
-var globalFlowId uint64 = 0
+var globalFlowId uint64 = 1
 
 // Create a new flow on the table
 func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
@@ -55,9 +55,12 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
     globalFlowId += 1
     flow.flowActions = make([]*FlowAction, 0)
 
+    log.Infof("Creating new flow for match: %+v", match)
+
     // See if the flow already exists
     flowKey := flow.flowKey()
     if (self.flowDb[flowKey] != nil) {
+        log.Errorf("Flow %s already exists", flowKey)
         return nil, errors.New("Flow already exists")
     }
 
@@ -70,5 +73,11 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 // Delete a flow from the table
 func (self *Table) DeleteFlow(match FlowMatch) error {
     // FIXME: to be implemented
+    return nil
+}
+
+// Delete the table
+func (self *Table) Delete() error {
+    // FIXME: Delete the table
     return nil
 }

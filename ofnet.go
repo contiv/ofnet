@@ -50,3 +50,10 @@ type OfnetDatapath interface {
     // Remove a vlan
     RemoveVlan(vlanId uint16, vni uint32) error
 }
+
+
+// Information about each node
+type OfnetNode struct {
+    HostAddr    string
+    HostPort    uint16
+}

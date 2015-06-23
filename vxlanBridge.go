@@ -100,8 +100,13 @@ func NewVxlan(agent *OfnetAgent, rpcServ *rpc.Server) *Vxlan {
     vxlan.vlanDb     = make(map[uint16]*Vlan)
     vxlan.macFlowDb  = make(map[string]*ofctrl.Flow)
 
+    log.Infof("Registering vxlan RPC calls")
+
     // Register for Route rpc callbacks
-    rpcServ.Register(vxlan)
+    err := rpcServ.Register(vxlan)
+    if err != nil {
+        log.Fatalf("Error registering vxlan RPC")
+    }
 
     return vxlan
 }
@@ -114,7 +119,7 @@ func (self *Vxlan) SwitchConnected(sw *ofctrl.OFSwitch) {
     // Init the Fgraph
     self.initFgraph()
 
-    log.Infof("Switch connected(vxlan). adding default vlan")
+    log.Infof("Switch connected(vxlan)")
 }
 
 // Handle switch disconnected notification
@@ -129,6 +134,8 @@ func (self *Vxlan) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
 
 // Add a local endpoint and install associated local route
 func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
+    log.Infof("Adding local endpoint: %+v", endpoint)
+
     // Install a flow entry for vlan mapping and point it to IP table
     portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
@@ -148,17 +155,25 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
     }
 
     // Add the port to local and remote flood list
-    vlan := self.vlanDb[endpoint.Vlan]
     output, _ := self.ofSwitch.OutputPort(endpoint.PortNo)
-    vlan.localFlood.AddOutput(output)
-    vlan.allFlood.AddOutput(output)
+    vlan := self.vlanDb[endpoint.Vlan]
+    if vlan != nil {
+        vlan.localFlood.AddOutput(output)
+        vlan.allFlood.AddOutput(output)
+    }
 
     // Finally install the mac address
-    macFlow, _ := self.macDestTable.NewFlow(ofctrl.FlowMatch{
+    macFlow, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
                             VlanId: endpoint.Vlan,
                             MacDa: &endpoint.MacAddr,
                         })
+    if err != nil {
+        log.Errorf("Error creating mac flow for endpoint %+v. Err: %v", endpoint, err)
+        return err
+    }
+
+    // Remove vlan tag and point it to local port
     macFlow.PopVlan()
     macFlow.Next(output)
 
@@ -295,11 +310,17 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
     // Walk all VTEP ports and add vni-vlan mapping for new VNI
     for _, vtepPort := range self.agent.vtepTable {
         // Install a flow entry for  VNI/vlan and point it to macDest table
-        portVlanFlow, _ := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+        portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
                                 Priority: FLOW_MATCH_PRIORITY,
                                 InputPort: *vtepPort,
                                 TunnelId: uint64(vni),
                             })
+        if err != nil {
+            log.Errorf("Error creating port vlan flow for vlan %d. Err: %v", vlanId, err)
+            return err
+        }
+
+        // Set vlan id
         portVlanFlow.SetVlan(vlanId)
 
         // Set the metadata to indicate packet came in from VTEP port
@@ -320,19 +341,28 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
     // Install local flood and remote flood entries in macDestTable
     var metadataLclRx uint64 = 0
     var metadataVtepRx uint64 = METADATA_RX_VTEP
-    vlanFlood, _ := self.macDestTable.NewFlow(ofctrl.FlowMatch{
+    vlanFlood, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_FLOOD_PRIORITY,
                             VlanId: vlanId,
                             Metadata: &metadataLclRx,
                             MetadataMask: &metadataVtepRx,
                         })
+    if err != nil {
+        log.Errorf("Error creating local+remote flood. Err: %v", err)
+        return err
+    }
+
     vlanFlood.Next(vlan.allFlood)
-    vlanLclFlood, _ := self.macDestTable.NewFlow(ofctrl.FlowMatch{
+    vlanLclFlood, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_FLOOD_PRIORITY,
                             VlanId: vlanId,
                             Metadata: &metadataVtepRx,
                             MetadataMask: &metadataVtepRx,
                         })
+    if err != nil {
+        log.Errorf("Error creating local flood. Err: %v", err)
+        return err
+    }
     vlanLclFlood.Next(vlan.localFlood)
 
     // store it in DB
@@ -383,7 +413,7 @@ func (self *Vxlan) MacRouteAdd(macRoute *MacRoute, ret *bool) error {
     oldRoute := self.macRouteDb[macRoute.MacAddrStr]
     if (oldRoute != nil) {
         // If old route has more recent timestamp, nothing to do
-        if (oldRoute.Timestamp.After(macRoute.Timestamp)) {
+        if !macRoute.Timestamp.After(oldRoute.Timestamp) {
             return nil
         }
     }
@@ -457,16 +487,16 @@ func (self *Vxlan) localMacRouteAdd(macRoute *MacRoute) error {
     self.macRouteDb[macRoute.MacAddrStr] = macRoute
 
     // Send the route to all known masters
-    for masterAddr, _ := range self.agent.masterDb {
+    for _, master := range self.agent.masterDb {
         var resp bool
 
-        log.Infof("Sending macRoute %+v to master %s", macRoute, masterAddr)
+        log.Infof("Sending macRoute %+v to master %+v", macRoute, master)
 
         // Make the RPC call to add the route to master
-        client := rpcHub.Client(masterAddr, OFNET_MASTER_PORT)
+        client := rpcHub.Client(master.HostAddr, master.HostPort)
         err := client.Call("OfnetMaster.MacRouteAdd", macRoute, &resp)
         if (err != nil) {
-            log.Errorf("Failed to add route %+v to master %s. Err: %v", macRoute, masterAddr, err)
+            log.Errorf("Failed to add route %+v to master %+v. Err: %v", macRoute, master, err)
             return err
         }
     }
@@ -480,16 +510,16 @@ func (self *Vxlan) localMacRouteDel(macRoute *MacRoute) error {
     delete(self.macRouteDb, macRoute.MacAddrStr)
 
     // Send the DELETE to all known masters
-    for masterAddr, _ := range self.agent.masterDb {
+    for _, master := range self.agent.masterDb {
         var resp bool
 
-        log.Infof("Sending DELETE macRoute %+v to master %s", macRoute, masterAddr)
+        log.Infof("Sending DELETE macRoute %+v to master %+v", macRoute, master)
 
         // Make the RPC call to add the route to master
-        client := rpcHub.Client(masterAddr, OFNET_MASTER_PORT)
+        client := rpcHub.Client(master.HostAddr, master.HostPort)
         err := client.Call("OfnetMaster.MacRouteDel", macRoute, &resp)
         if (err != nil) {
-            log.Errorf("Failed to DELETE route %+v to master %s. Err: %v", macRoute, masterAddr, err)
+            log.Errorf("Failed to DELETE route %+v to master %+v. Err: %v", macRoute, master, err)
             return err
         }
     }

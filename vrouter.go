@@ -84,7 +84,7 @@ func (self *Vrouter) SwitchConnected(sw *ofctrl.OFSwitch) {
     self.ofSwitch = sw
 
     log.Infof("Switch connected(vrouter). installing flows")
-    
+
     // Init the Fgraph
     self.initFgraph()
 }
@@ -218,16 +218,16 @@ func (self *Vrouter) RemoveLocalEndpoint(portNo uint32) error {
     route.Timestamp = time.Now()
 
     // Send the route delete to all known masters
-    for masterAddr, _ := range self.agent.masterDb {
+    for _, master := range self.agent.masterDb {
         var resp bool
 
-        log.Infof("Sending DELETE route %+v to master %s", route, masterAddr)
+        log.Infof("Sending DELETE route %+v to master %+v", route, master)
 
         // Make the RPC call to delete the route on master
-        client := rpcHub.Client(masterAddr, OFNET_MASTER_PORT)
+        client := rpcHub.Client(master.HostAddr, master.HostPort)
         err := client.Call("OfnetMaster.RouteDel", route, &resp)
         if (err != nil) {
-            log.Errorf("Failed to send DELETE route %+v to master %s. Err: %v", route, masterAddr, err)
+            log.Errorf("Failed to send DELETE route %+v to master %+v. Err: %v", route, master, err)
         }
     }
 
@@ -296,7 +296,7 @@ func (self *Vrouter) RouteAdd(route *OfnetRoute, ret *bool) error {
     oldRoute := self.routeTable[route.IpAddr.String()]
     if (oldRoute != nil) {
         // If old route has more recent timestamp, nothing to do
-        if (oldRoute.Timestamp.After(route.Timestamp)) {
+        if (!route.Timestamp.After(oldRoute.Timestamp)) {
             return nil
         }
     }
@@ -386,15 +386,15 @@ func (self *Vrouter) localRouteAdd(route *OfnetRoute) error {
     self.routeTable[route.IpAddr.String()] = route
 
     // Send the route to all known masters
-    for masterAddr, _ := range self.agent.masterDb {
+    for _, master := range self.agent.masterDb {
         var resp bool
 
-        log.Infof("Sending route %+v to master %s", route, masterAddr)
+        log.Infof("Sending route %+v to master %+v", route, master)
 
         // Make the RPC call to add the route to master
-        err := rpcHub.Client(masterAddr, OFNET_MASTER_PORT).Call("OfnetMaster.RouteAdd", route, &resp)
+        err := rpcHub.Client(master.HostAddr, master.HostPort).Call("OfnetMaster.RouteAdd", route, &resp)
         if (err != nil) {
-            log.Errorf("Failed to add route %+v to master %s. Err: %v", route, masterAddr, err)
+            log.Errorf("Failed to add route %+v to master %+v. Err: %v", route, master, err)
             return err
         }
     }

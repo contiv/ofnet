@@ -195,7 +195,7 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             actInstr.AddAction(pushVlanAction, true)
             addActn = true
 
-            log.Infof("flow install. Added pushvlan action: %+v, setVlan actions: %+v",
+            log.Debugf("flow install. Added pushvlan action: %+v, setVlan actions: %+v",
                             pushVlanAction, setVlanAction)
 
         case "popVlan":
@@ -206,8 +206,8 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             actInstr.AddAction(popVlan, true)
             addActn = true
 
-            log.Infof("flow install. Added popVlan action: %+v", popVlan)
-            
+            log.Debugf("flow install. Added popVlan action: %+v", popVlan)
+
         case "setMacDa":
             // Set Outer MacDA field
             macDaField := openflow13.NewEthDstField(flowAction.macAddr, nil)
@@ -218,7 +218,7 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             actInstr.AddAction(setMacDaAction, true)
             addActn = true
 
-            log.Infof("flow install. Added setMacDa action: %+v", setMacDaAction)
+            log.Debugf("flow install. Added setMacDa action: %+v", setMacDaAction)
 
 
         case "setMacSa":
@@ -230,7 +230,7 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             actInstr.AddAction(setMacSaAction, true)
             addActn = true
 
-            log.Infof("flow install. Added setMacSa Action: %+v", setMacSaAction)
+            log.Debugf("flow install. Added setMacSa Action: %+v", setMacSaAction)
 
         case "setTunnelId":
             // Set tunnelId field
@@ -241,7 +241,7 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
             actInstr.AddAction(setTunnelAction, true)
             addActn = true
 
-            log.Infof("flow install. Added setTunnelId Action: %+v", setTunnelAction)
+            log.Debugf("flow install. Added setTunnelId Action: %+v", setTunnelAction)
 
         case "setMetadata":
             // Set Metadata instruction
@@ -281,7 +281,7 @@ func (self *Flow) install() error {
 
     // convert match fields to openflow 1.3 format
     flowMod.Match = self.xlateMatch()
-    log.Infof("flow install: Match: %+v", flowMod.Match)
+    log.Debugf("flow install: Match: %+v", flowMod.Match)
 
 
     // Based on the next elem, decide what to install
@@ -296,7 +296,7 @@ func (self *Flow) install() error {
         // Add the instruction to flowmod
         flowMod.AddInstruction(instr)
 
-        log.Infof("flow install: added goto table instr: %+v", instr)
+        log.Debugf("flow install: added goto table instr: %+v", instr)
 
     case "flood": fallthrough;
     case "output":
@@ -312,13 +312,13 @@ func (self *Flow) install() error {
 
             flowMod.AddInstruction(instr)
 
-            log.Infof("flow install: added output port instr: %+v", instr)
+            log.Debugf("flow install: added output port instr: %+v", instr)
         }
     default:
         log.Fatalf("Unknown Fgraph element type %s", self.NextElem.Type())
     }
 
-    log.Infof("Sending flowmod: %+v", flowMod)
+    log.Debugf("Sending flowmod: %+v", flowMod)
 
     // Send the message
     self.Table.Switch.Send(flowMod)

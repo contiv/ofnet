@@ -36,11 +36,15 @@ func NewRpcServer(portNo uint16) *rpc.Server{
             log.Fatal("listen error:", e)
         }
 
+        log.Infof("RPC Server is listening on %s\n", l.Addr())
+
         for {
             conn, err := l.Accept()
             if err != nil {
                 log.Fatal(err)
             }
+
+            log.Infof("Server accepted connection to %s from %s\n", conn.LocalAddr(), conn.RemoteAddr())
 
             go server.ServeCodec(jsonrpc.NewServerCodec(conn))
         }
@@ -54,11 +58,15 @@ var clientDb map[string]*rpc.Client = make(map[string]*rpc.Client)
 
 // Create a new client
 func NewRpcClient(servAddr string, portNo uint16) *rpc.Client {
+    log.Infof("Connecting to RPC server: %s:%d", servAddr, portNo)
+
     // Connect to the server
     conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", servAddr, portNo))
     if err != nil {
         panic(err)
     }
+
+    log.Infof("Connected to RPC server: %s:%d", servAddr, portNo)
 
     // Create an RPC client
     client := jsonrpc.NewClient(conn)
@@ -70,14 +78,16 @@ func NewRpcClient(servAddr string, portNo uint16) *rpc.Client {
 
 // Get a client to the rpc server
 func Client(servAddr string, portNo uint16) *rpc.Client {
+    clientKey := fmt.Sprintf("%s:%d", servAddr, portNo)
+
     // Return the client if it already exists
-    if (clientDb[servAddr] != nil) {
-        return clientDb[servAddr]
+    if (clientDb[clientKey] != nil) {
+        return clientDb[clientKey]
     }
 
     // Create a new client and add it to the DB
     client := NewRpcClient(servAddr, portNo)
-    clientDb[servAddr] = client
+    clientDb[clientKey] = client
 
     return client
 }
