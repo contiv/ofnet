@@ -54,7 +54,11 @@ func NewOfnetMaster(portNo uint16) *OfnetMaster {
     master.rpcServer = rpcHub.NewRpcServer(portNo)
 
     // Register RPC handler
-    master.rpcServer.Register(master)
+    err := master.rpcServer.Register(master)
+    if err != nil {
+        log.Fatalf("Error Registering RPC callbacks. Err: %v", err)
+        return nil
+    }
 
     return master
 }

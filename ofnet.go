@@ -51,6 +51,9 @@ type OfnetDatapath interface {
     RemoveVlan(vlanId uint16, vni uint32) error
 }
 
+// Default port numbers
+const OFNET_MASTER_PORT = 9001
+const OFNET_AGENT_PORT  = 9002
 
 // Information about each node
 type OfnetNode struct {

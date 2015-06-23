@@ -298,6 +298,12 @@ func (self *Vxlan) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 
 // Add a vlan.
 func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
+    // check if the vlan already exists. if it does, we are done
+    if self.vlanDb[vlanId] != nil {
+        return nil
+    }
+
+    // create new vlan object
     vlan := new(Vlan)
     vlan.Vni = vni
     vlan.localPortList = make(map[uint32]*uint32)

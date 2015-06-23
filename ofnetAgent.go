@@ -69,8 +69,6 @@ const FLOW_MATCH_PRIORITY = 100     // Priority for all match flows
 const FLOW_FLOOD_PRIORITY = 10      // Priority for flood entries
 const FLOW_MISS_PRIORITY = 1        // priority for table miss flow
 
-const OFNET_MASTER_PORT = 9001
-const OFNET_AGENT_PORT  = 9002
 
 // Create a new Ofnet agent and initialize it
 func NewOfnetAgent(bridge string, dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16) (*OfnetAgent, error) {
