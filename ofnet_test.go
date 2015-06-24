@@ -58,11 +58,10 @@ func TestOfnetInit(t *testing.T) {
 
 	// Create agents
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr1" + fmt.Sprintf("%d", i)
 		rpcPort := uint16(9101 + i)
 		ovsPort := uint16(9151 + i)
 		lclIp := net.ParseIP(localIpList[i])
-		vrtrAgents[i], err = NewOfnetAgent(brName, "vrouter", lclIp, rpcPort, ovsPort)
+		vrtrAgents[i], err = NewOfnetAgent("vrouter", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			t.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -74,12 +73,11 @@ func TestOfnetInit(t *testing.T) {
 	}
 
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr2" + fmt.Sprintf("%d", i)
 		rpcPort := uint16(9201 + i)
 		ovsPort := uint16(9251 + i)
 		lclIp := net.ParseIP(localIpList[i])
 
-		vxlanAgents[i], err = NewOfnetAgent(brName, "vxlan", lclIp, rpcPort, ovsPort)
+		vxlanAgents[i], err = NewOfnetAgent("vxlan", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			t.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -159,6 +157,22 @@ func TestOfnetInit(t *testing.T) {
 	time.Sleep(10 * time.Second)
 }
 
+// test adding vlan
+func TestOfnetSetupVlan(t *testing.T) {
+    for i := 0; i < NUM_AGENT; i++ {
+        for j := 1; j < 10; j++ {
+            log.Infof("Adding Vlan %d on %s", j, localIpList[i])
+            err := vrtrAgents[i].AddVlan(uint16(j), uint32(j))
+            if err != nil {
+                t.Errorf("Error adding vlan %d. Err: %v", j, err)
+            }
+            err = vxlanAgents[i].AddVlan(uint16(j), uint32(j))
+            if err != nil {
+                t.Errorf("Error adding vlan %d. Err: %v", j, err)
+            }
+        }
+    }
+}
 // test adding full mesh vtep ports
 func TestOfnetSetupVtep(t *testing.T) {
 	for i := 0; i < NUM_AGENT; i++ {
@@ -275,9 +289,15 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 	}
 }
 
-// Wait for debug and cleanup 
+// Wait for debug and cleanup
 func TestWaitAndCleanup(t *testing.T) {
 	time.Sleep(1 * time.Second)
+
+    // Disconnect from switches.
+    for i := 0; i < NUM_AGENT; i++ {
+        vrtrAgents[i].Delete()
+        vxlanAgents[i].Delete()
+    }
 
 	for i := 0; i < NUM_AGENT; i++ {
 		brName := "ovsbr1" + fmt.Sprintf("%d", i)

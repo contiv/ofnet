@@ -116,7 +116,7 @@ func ofctlFlowMatch(flowList []string, tableId int, matchStr, actStr string) boo
 // Test if OVS switch connects successfully
 func TestOfctrlInit(t *testing.T) {
     // Create a controller
-    ctrler = NewController("ovsbr11", &ofActor)
+    ctrler = NewController(&ofActor)
 
     // start listening
     go ctrler.Listen(":6733")

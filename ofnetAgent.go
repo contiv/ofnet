@@ -42,6 +42,7 @@ type OfnetAgent struct {
     localIp     net.IP                  // Local IP to be used for tunnel end points
     MyPort      uint16                  // Port where the agent's RPC server is listening
     MyAddr      string                  // RPC server addr. same as localIp. different in testing environments
+    isConnected bool                    // Is the switch connected
 
     rpcServ     *rpc.Server             // jsonrpc server
     datapath    OfnetDatapath           // Configured datapath
@@ -71,7 +72,7 @@ const FLOW_MISS_PRIORITY = 1        // priority for table miss flow
 
 
 // Create a new Ofnet agent and initialize it
-func NewOfnetAgent(bridge string, dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16) (*OfnetAgent, error) {
+func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16) (*OfnetAgent, error) {
     agent := new(OfnetAgent)
 
     // Init params
@@ -87,7 +88,7 @@ func NewOfnetAgent(bridge string, dpName string, localIp net.IP, rpcPort uint16,
     agent.vtepTable = make(map[string]*uint32)
 
     // Create an openflow controller
-    agent.ctrler = ofctrl.NewController(bridge, agent)
+    agent.ctrler = ofctrl.NewController(agent)
 
     // Start listening to controller port
     go agent.ctrler.Listen(fmt.Sprintf(":%d", ovsPort))
@@ -125,7 +126,9 @@ func (self *OfnetAgent) SwitchConnected(sw *ofctrl.OFSwitch) {
     self.datapath.SwitchConnected(sw)
 
     // add default vlan
-    self.AddVlan(1, 1)
+    //self.AddVlan(1, 1)
+
+    self.isConnected = true
 }
 
 // Handle switch disconnect event
@@ -134,6 +137,14 @@ func (self *OfnetAgent) SwitchDisconnected(sw *ofctrl.OFSwitch) {
 
     // Inform the datapath
     self.datapath.SwitchDisconnected(sw)
+
+    self.ofSwitch = nil
+    self.isConnected = false
+}
+
+// IsSwitchConnected returns true if switch is connected
+func (self *OfnetAgent) IsSwitchConnected() bool {
+    return self.isConnected
 }
 
 // Receive a packet from the switch.
@@ -251,5 +262,13 @@ func (self *OfnetAgent) RemoveVlan(vlanId uint16, vni uint32) error {
 
 func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
     log.Infof("Received dummy route RPC call")
+    return nil
+}
+
+// Delete cleans up an ofnet agent
+func (self *OfnetAgent) Delete() error {
+    // Disconnect from the switch
+    self.ofSwitch.Disconnect()
+
     return nil
 }

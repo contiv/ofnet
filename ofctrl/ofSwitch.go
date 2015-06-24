@@ -92,6 +92,10 @@ func (self *OFSwitch) Send(req util.Message) {
     self.stream.Outbound <- req
 }
 
+func (self *OFSwitch) Disconnect() {
+    self.stream.Shutdown <- true
+}
+
 // Handle switch connected event
 func (self *OFSwitch) switchConnected() {
     self.app.SwitchConnected(self)
