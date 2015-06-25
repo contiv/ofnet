@@ -20,27 +20,32 @@ import (
     "net"
     "net/rpc"
     "net/rpc/jsonrpc"
+    "strings"
 
     log "github.com/Sirupsen/logrus"
 )
 
 // Create a new RPC server
-func NewRpcServer(portNo uint16) *rpc.Server{
+func NewRpcServer(portNo uint16) (*rpc.Server, net.Listener) {
     server := rpc.NewServer()
 
-    // Listen on RPC port in background
+    // Listens on a port
+    l, e := net.Listen("tcp", fmt.Sprintf(":%d", portNo))
+    if e != nil {
+        log.Fatal("listen error:", e)
+    }
+
+    log.Infof("RPC Server is listening on %s\n", l.Addr())
+
+    // run in background
     go func() {
-        // Listens on a port
-        l, e := net.Listen("tcp", fmt.Sprintf(":%d", portNo))
-        if e != nil {
-            log.Fatal("listen error:", e)
-        }
-
-        log.Infof("RPC Server is listening on %s\n", l.Addr())
-
         for {
             conn, err := l.Accept()
             if err != nil {
+                // if listener closed, just exit the groutine
+                if strings.Contains(err.Error(), "use of closed network connection") {
+                    return
+                }
                 log.Fatal(err)
             }
 
@@ -50,7 +55,7 @@ func NewRpcServer(portNo uint16) *rpc.Server{
         }
     }()
 
-    return server
+    return server, l
 }
 
 // DB of all existing clients

@@ -17,7 +17,9 @@ package ofnet
 
 import (
     "fmt"
+    "net"
     "net/rpc"
+    "time"
 
     "github.com/contiv/ofnet/rpcHub"
 
@@ -27,7 +29,8 @@ import (
 
 // Ofnet master state
 type OfnetMaster struct {
-    rpcServer   *rpc.Server
+    rpcServer   *rpc.Server             // json-rpc server
+    rpcListener net.Listener           // Listener
 
     // Database of agent nodes
     agentDb     map[string]*OfnetNode
@@ -51,7 +54,7 @@ func NewOfnetMaster(portNo uint16) *OfnetMaster {
     master.macRouteDb = make(map[string]*MacRoute)
 
     // Create a new RPC server
-    master.rpcServer = rpcHub.NewRpcServer(portNo)
+    master.rpcServer, master.rpcListener = rpcHub.NewRpcServer(portNo)
 
     // Register RPC handler
     err := master.rpcServer.Register(master)
@@ -61,6 +64,14 @@ func NewOfnetMaster(portNo uint16) *OfnetMaster {
     }
 
     return master
+}
+
+// Delete closes rpc listener
+func (self *OfnetMaster) Delete() error {
+    self.rpcListener.Close()
+    time.Sleep(100 * time.Millisecond)
+
+    return nil
 }
 
 // Register an agent

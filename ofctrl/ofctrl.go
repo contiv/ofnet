@@ -18,6 +18,7 @@ package ofctrl
 import (
     "net"
     "time"
+    "strings"
 
     "github.com/shaleman/libOpenflow/common"
     "github.com/shaleman/libOpenflow/openflow13"
@@ -49,6 +50,7 @@ type AppInterface interface {
 
 type Controller struct{
     app      AppInterface
+    listener *net.TCPListener
 }
 
 // Create a new controller
@@ -68,22 +70,31 @@ func NewController(app AppInterface) *Controller {
 func (c *Controller) Listen(port string) {
     addr, _ := net.ResolveTCPAddr("tcp", port)
 
-    sock, err := net.ListenTCP("tcp", addr)
+    var err error
+    c.listener, err = net.ListenTCP("tcp", addr)
     if err != nil {
         log.Fatal(err)
     }
 
-    defer sock.Close()
+    defer c.listener.Close()
 
     log.Println("Listening for connections on", addr)
     for {
-        conn, err := sock.AcceptTCP()
+        conn, err := c.listener.AcceptTCP()
         if err != nil {
+            if strings.Contains(err.Error(), "use of closed network connection") {
+                return
+            }
             log.Fatal(err)
         }
         go c.handleConnection(conn)
     }
 
+}
+
+// Cleanup the controller
+func (c *Controller) Delete() {
+    c.listener.Close()
 }
 
 // Handle TCP connection from the switch

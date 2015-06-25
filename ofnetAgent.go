@@ -27,7 +27,7 @@ import (
     "fmt"
     "net"
     "net/rpc"
-
+    "time"
 
     "github.com/contiv/ofnet/ofctrl"
     "github.com/contiv/ofnet/rpcHub"
@@ -45,6 +45,7 @@ type OfnetAgent struct {
     isConnected bool                    // Is the switch connected
 
     rpcServ     *rpc.Server             // jsonrpc server
+    rpcListener net.Listener           // Listener
     datapath    OfnetDatapath           // Configured datapath
 
     masterDb    map[string]*OfnetNode      // list of Masters
@@ -95,8 +96,9 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 
     // Create rpc server
     // FIXME: Figure out how to handle multiple OVS bridges.
-    rpcServ := rpcHub.NewRpcServer(rpcPort)
+    rpcServ, listener := rpcHub.NewRpcServer(rpcPort)
     agent.rpcServ = rpcServ
+    agent.rpcListener = listener
 
     // Register for Master add/remove events
     rpcServ.Register(agent)
@@ -113,6 +115,24 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 
     // Return it
     return agent, nil
+}
+
+// Delete cleans up an ofnet agent
+func (self *OfnetAgent) Delete() error {
+    // Disconnect from the switch
+    if self.ofSwitch != nil {
+        self.ofSwitch.Disconnect()
+    }
+
+    // Cleanup the controller
+    self.ctrler.Delete()
+
+    // close listeners
+    self.rpcListener.Close()
+
+    time.Sleep(100 * time.Millisecond)
+
+    return nil
 }
 
 // Handle switch connected event
@@ -262,13 +282,5 @@ func (self *OfnetAgent) RemoveVlan(vlanId uint16, vni uint32) error {
 
 func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
     log.Infof("Received dummy route RPC call")
-    return nil
-}
-
-// Delete cleans up an ofnet agent
-func (self *OfnetAgent) Delete() error {
-    // Disconnect from the switch
-    self.ofSwitch.Disconnect()
-
     return nil
 }
