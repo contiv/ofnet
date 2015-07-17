@@ -35,10 +35,10 @@ import (
 // +-------+
 // | Valid |
 // | Pkts  +-->+-------+
-// +-------+   | Vlan  |   +----------+
-//             | Table +-->| Mac Src  |   +---------+
-//             +-------+   | Learning +-->| Mac Dst |      +--------------+
-//                         +----------+   | Lookup  +--+-->| Ucast Output |
+// +-------+   | Vlan  |
+//             | Table +-------+          +---------+
+//             +-------+       +--------->| Mac Dst |      +--------------+
+//                                        | Lookup  +--+-->| Ucast Output |
 //                                        +---------+  |   +--------------+
 //                                                     |
 //                                                     |
@@ -66,6 +66,7 @@ type Vxlan struct {
 
     // Flow Database
     macFlowDb       map[string]*ofctrl.Flow // Database of flow entries
+    portVlanFlowDb  map[uint32]*ofctrl.Flow // Database of flow entries
 }
 
 // Vlan info
@@ -99,6 +100,7 @@ func NewVxlan(agent *OfnetAgent, rpcServ *rpc.Server) *Vxlan {
     vxlan.macRouteDb = make(map[string]*MacRoute)
     vxlan.vlanDb     = make(map[uint16]*Vlan)
     vxlan.macFlowDb  = make(map[string]*ofctrl.Flow)
+    vxlan.portVlanFlowDb  = make(map[uint32]*ofctrl.Flow)
 
     log.Infof("Registering vxlan RPC calls")
 
@@ -162,7 +164,7 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
         return errors.New("Unknown Vlan")
     }
 
-    // Install a flow entry for vlan mapping and point it to IP table
+    // Install a flow entry for vlan mapping and point it to Mac table
     portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
                             Priority: FLOW_MATCH_PRIORITY,
                             InputPort: endpoint.PortNo,
@@ -179,6 +181,9 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
         log.Errorf("Error installing portvlan entry. Err: %v", err)
         return err
     }
+
+    // save the flow entry
+    self.portVlanFlowDb[endpoint.PortNo] = portVlanFlow
 
     // Add the port to local and remote flood list
     output, _ := self.ofSwitch.OutputPort(endpoint.PortNo)
@@ -230,7 +235,8 @@ func (self *Vxlan) AddLocalEndpoint(endpoint EndpointInfo) error {
 // FIXME: remove this function and add a mapping between local portNo and macRoute
 func (self *Vxlan) findLocalMacRouteByPortno(portNo uint32) *MacRoute {
     for _, macRoute := range self.macRouteDb {
-        if macRoute.PortNo == portNo {
+        if (macRoute.OriginatorIp.String() == self.agent.localIp.String()) &&
+            (macRoute.PortNo == portNo) {
             return macRoute
         }
     }
@@ -254,6 +260,15 @@ func (self *Vxlan) RemoveLocalEndpoint(portNo uint32) error {
     vlan.localFlood.RemoveOutput(output)
     vlan.allFlood.RemoveOutput(output)
 
+    // Remove the port vlan flow.
+    portVlanFlow := self.portVlanFlowDb[portNo]
+    if portVlanFlow != nil {
+        err := portVlanFlow.Delete()
+        if err != nil {
+            log.Errorf("Error deleting portvlan flow. Err: %v", err)
+        }
+    }
+    
     // Uninstall the flow
     err := self.uninstallMacRoute(macRoute)
     if err != nil {
@@ -487,6 +502,9 @@ func (self *Vxlan) MacRouteAdd(macRoute *MacRoute, ret *bool) error {
     macFlow.PopVlan()
     macFlow.SetTunnelId(uint64(macRoute.Vni))
     macFlow.Next(outPort)
+
+    // Save the flow in DB
+    self.macFlowDb[macRoute.MacAddrStr] = macFlow
 
     return nil
 }
