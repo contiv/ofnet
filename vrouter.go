@@ -156,7 +156,8 @@ func (self *Vrouter) AddLocalEndpoint(endpoint EndpointInfo) error {
     }
 
     // Set the vlan and install it
-    portVlanFlow.SetVlan(endpoint.Vlan)
+    // FIXME: not required till multi-VRF
+    // portVlanFlow.SetVlan(endpoint.Vlan)
     err = portVlanFlow.Next(self.ipTable)
     if err != nil {
         log.Errorf("Error installing portvlan entry. Err: %v", err)
@@ -199,6 +200,9 @@ func (self *Vrouter) AddLocalEndpoint(endpoint EndpointInfo) error {
     // Set Mac addresses
     ipFlow.SetMacDa(endpoint.MacAddr)
     ipFlow.SetMacSa(self.myRouterMac)
+
+    // Remove the vlan tag. FIXME: not required till multi-VRF
+    // ipFlow.PopVlan()
 
     // Point the route at output port
     err = ipFlow.Next(outPort)
