@@ -219,7 +219,9 @@ func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		InputPort: portNo,
 	})
 	// FIXME: Need to match on tunnelId and set vlan-id per VRF
-	portVlanFlow.SetVlan(1)
+	// FIXME: not needed till multi-vrf support
+	// portVlanFlow.SetVlan(1)
+
 	portVlanFlow.Next(self.ipTable)
 
 	// FIXME: walk all the routes and see if we can install it
