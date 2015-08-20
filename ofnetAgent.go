@@ -118,6 +118,8 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 		agent.datapath = NewVrouter(agent, rpcServ)
 	case "vxlan":
 		agent.datapath = NewVxlan(agent, rpcServ)
+	case "vlan":
+		agent.datapath = NewVlanBridge(agent, rpcServ)
 	default:
 		log.Fatalf("Unknown Datapath %s", dpName)
 	}
