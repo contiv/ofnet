@@ -228,7 +228,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
 				ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.10.%d.%d", k, k)
-				ipTableId := 2
+				ipTableId := IP_TBL_ID
 				if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 					t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
 				}
@@ -301,7 +301,7 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 				k := j + 1
 				macFlowMatch := fmt.Sprintf("priority=100,dl_vlan=1,dl_dst=02:02:02:%02x:%02x:%02x", k, k, k)
 
-				macTableId := 3
+				macTableId := MAC_DEST_TBL_ID
 				if !ofctlFlowMatch(flowList, macTableId, macFlowMatch) {
 					t.Errorf("Could not find the mac flow %s on ovs %s", macFlowMatch, brName)
 				}

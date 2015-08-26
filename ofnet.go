@@ -77,7 +77,7 @@ type OfnetNode struct {
 type OfnetEndpoint struct {
 	EndpointID    string    // Unique identifier for the endpoint
 	EndpointType  string    // Type of the endpoint "internal", "external" or "externalRoute"
-	EndpointGroup string    // Endpoint group identifier for policies.
+	EndpointGroup uint32    // Endpoint group identifier for policies.
 	IpAddr        net.IP    // IP address of the end point
 	VrfId         uint16    // IP address namespace
 	MacAddrStr    string    // Mac address of the end point(in string format)
@@ -86,4 +86,16 @@ type OfnetEndpoint struct {
 	OriginatorIp  net.IP    // Originating switch
 	PortNo        uint32    // Port number on originating switch
 	Timestamp     time.Time // Timestamp of the last event
+}
+
+// OfnetPolicyRule has security rule to be installed
+type OfnetPolicyRule struct {
+	RuleId           string // Unique identifier for the rule
+	SrcEndpointGroup uint32 // Source endpoint group
+	DstEndpointGroup uint32 // Destination endpoint group
+	SrcIpAddr        string // source IP addrss and mask
+	DstIpAddr        string // Destination IP address and mask
+	IpProtocol       uint8  // IP protocol number
+	SrcPort          uint16 // Source port
+	DstPort          uint16 // destination port
 }

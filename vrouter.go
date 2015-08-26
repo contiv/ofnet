@@ -322,7 +322,7 @@ func (self *Vrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 }
 
 const VLAN_TBL_ID = 1
-const IP_TBL_ID = 2
+const IP_TBL_ID = 4
 
 // initialize Fgraph on the switch
 func (self *Vrouter) initFgraph() error {
