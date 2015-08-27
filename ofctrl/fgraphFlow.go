@@ -38,6 +38,11 @@ type FlowMatch struct {
 	IpSaMask     *net.IP
 	IpDa         *net.IP
 	IpDaMask     *net.IP
+	IpProto      uint8
+	TcpSrcPort   uint16
+	TcpDstPort   uint16
+	UdpSrcPort   uint16
+	UdpDstPort   uint16
 	Metadata     *uint64
 	MetadataMask *uint64
 	TunnelId     uint64
@@ -62,6 +67,9 @@ type Flow struct {
 	flowId      uint64        // Unique ID for the flow
 	flowActions []*FlowAction // List of flow actions
 }
+
+const IP_PROTO_TCP = 6
+const IP_PROTO_UDP = 17
 
 // string key for the flow
 // FIXME: simple json conversion for now. This needs to be smarter
@@ -90,11 +98,13 @@ func (self *Flow) GetFlowInstr() openflow13.Instruction {
 func (self *Flow) xlateMatch() openflow13.Match {
 	ofMatch := openflow13.NewMatch()
 
+	// Handle input poty
 	if self.Match.InputPort != 0 {
 		inportField := openflow13.NewInPortField(self.Match.InputPort)
 		ofMatch.AddField(*inportField)
 	}
 
+	// Handle mac DA field
 	if self.Match.MacDa != nil {
 		if self.Match.MacDaMask != nil {
 			macDaField := openflow13.NewEthDstField(*self.Match.MacDa, self.Match.MacDaMask)
@@ -105,6 +115,7 @@ func (self *Flow) xlateMatch() openflow13.Match {
 		}
 	}
 
+	// Handle MacSa field
 	if self.Match.MacSa != nil {
 		if self.Match.MacSaMask != nil {
 			macSaField := openflow13.NewEthSrcField(*self.Match.MacSa, self.Match.MacSaMask)
@@ -115,16 +126,19 @@ func (self *Flow) xlateMatch() openflow13.Match {
 		}
 	}
 
+	// Handle ethertype
 	if self.Match.Ethertype != 0 {
 		etypeField := openflow13.NewEthTypeField(self.Match.Ethertype)
 		ofMatch.AddField(*etypeField)
 	}
 
+	// Handle Vlan id
 	if self.Match.VlanId != 0 {
 		vidField := openflow13.NewVlanIdField(self.Match.VlanId)
 		ofMatch.AddField(*vidField)
 	}
 
+	// Handle IP Dst
 	if self.Match.IpDa != nil {
 		if self.Match.IpDaMask != nil {
 			ipDaField := openflow13.NewIpv4DstField(*self.Match.IpDa, self.Match.IpDaMask)
@@ -135,6 +149,7 @@ func (self *Flow) xlateMatch() openflow13.Match {
 		}
 	}
 
+	// Handle IP Src
 	if self.Match.IpSa != nil {
 		if self.Match.IpSaMask != nil {
 			ipSaField := openflow13.NewIpv4SrcField(*self.Match.IpSa, self.Match.IpSaMask)
@@ -145,6 +160,31 @@ func (self *Flow) xlateMatch() openflow13.Match {
 		}
 	}
 
+	// Handle IP protocol
+	if self.Match.IpProto != 0 {
+		protoField := openflow13.NewIpProtoField(self.Match.IpProto)
+		ofMatch.AddField(*protoField)
+	}
+
+	// Handle port numbers
+	if self.Match.IpProto == IP_PROTO_TCP && self.Match.TcpSrcPort != 0 {
+		portField := openflow13.NewTcpSrcField(self.Match.TcpSrcPort)
+		ofMatch.AddField(*portField)
+	}
+	if self.Match.IpProto == IP_PROTO_TCP && self.Match.TcpDstPort != 0 {
+		portField := openflow13.NewTcpDstField(self.Match.TcpDstPort)
+		ofMatch.AddField(*portField)
+	}
+	if self.Match.IpProto == IP_PROTO_UDP && self.Match.UdpSrcPort != 0 {
+		portField := openflow13.NewUdpSrcField(self.Match.UdpSrcPort)
+		ofMatch.AddField(*portField)
+	}
+	if self.Match.IpProto == IP_PROTO_UDP && self.Match.UdpDstPort != 0 {
+		portField := openflow13.NewUdpDstField(self.Match.UdpDstPort)
+		ofMatch.AddField(*portField)
+	}
+
+	// Handle metadata
 	if self.Match.Metadata != nil {
 		if self.Match.MetadataMask != nil {
 			metadataField := openflow13.NewMetadataField(*self.Match.Metadata, self.Match.MetadataMask)
@@ -155,6 +195,7 @@ func (self *Flow) xlateMatch() openflow13.Match {
 		}
 	}
 
+	// Handle Vxlan tunnel id
 	if self.Match.TunnelId != 0 {
 		tunnelIdField := openflow13.NewTunnelIdField(self.Match.TunnelId)
 		ofMatch.AddField(*tunnelIdField)

@@ -38,7 +38,7 @@ func TestPolicy(t *testing.T) {
 
 	log.Infof("Created vrouter ofnet agent: %v", ofnetAgent)
 
-	brName := "ovsbr11"
+	brName := "ovsbr60"
 	ovsDriver := ovsdbDriver.NewOvsDriver(brName)
 	err = ovsDriver.AddController("127.0.0.1", ovsPort)
 	if err != nil {
@@ -65,17 +65,41 @@ func TestPolicy(t *testing.T) {
 	}
 
 	var resp bool
-	rule := &OfnetPolicyRule{
-		RuleId:           "1234",
+	tcpRule := &OfnetPolicyRule{
+		RuleId:           "tcpRule",
 		SrcEndpointGroup: 100,
 		DstEndpointGroup: 200,
 		SrcIpAddr:        "10.10.10.10/24",
 		DstIpAddr:        "10.1.1.1/24",
+		IpProtocol:       6,
+		DstPort:          100,
+		SrcPort:          200,
 	}
 
 	// Add a policy
-	err = policyAgent.AddRule(rule, &resp)
+	err = policyAgent.AddRule(tcpRule, &resp)
 	if err != nil {
-		t.Errorf("Error installing rule {%+v}. Err: %v", rule, err)
+		t.Errorf("Error installing tcpRule {%+v}. Err: %v", tcpRule, err)
 	}
+
+	udpRule := &OfnetPolicyRule{
+		RuleId:           "udpRule",
+		SrcEndpointGroup: 300,
+		DstEndpointGroup: 400,
+		SrcIpAddr:        "20.20.20.20/24",
+		DstIpAddr:        "20.2.2.2/24",
+		IpProtocol:       17,
+		DstPort:          300,
+		SrcPort:          400,
+	}
+
+	// Add the policy
+	err = policyAgent.AddRule(udpRule, &resp)
+	if err != nil {
+		t.Errorf("Error installing udpRule {%+v}. Err: %v", udpRule, err)
+	}
+
+	// Cleanup
+	ofnetAgent.Delete()
+	ovsDriver.DeleteBridge(brName)
 }

@@ -139,6 +139,8 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 	var ipDaMask *net.IP = nil
 	var ipSa *net.IP = nil
 	var ipSaMask *net.IP = nil
+	var md *uint64 = nil
+	var mdm *uint64 = nil
 
 	// Parse dst ip
 	if rule.DstIpAddr != "" {
@@ -166,15 +168,39 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 		ipSaMask = &ipMask
 	}
 
+	// parse source/dst endpoint groups
+	if rule.SrcEndpointGroup != 0 && rule.DstEndpointGroup != 0 {
+		srcMetadata, srcMetadataMask := SrcGroupMetadata(rule.SrcEndpointGroup)
+		dstMetadata, dstMetadataMask := DstGroupMetadata(rule.DstEndpointGroup)
+		metadata := srcMetadata | dstMetadata
+		metadataMask := srcMetadataMask | dstMetadataMask
+		md = &metadata
+		mdm = &metadataMask
+	} else if rule.SrcEndpointGroup != 0 {
+		srcMetadata, srcMetadataMask := SrcGroupMetadata(rule.SrcEndpointGroup)
+		md = &srcMetadata
+		mdm = &srcMetadataMask
+	} else if rule.DstEndpointGroup != 0 {
+		dstMetadata, dstMetadataMask := DstGroupMetadata(rule.DstEndpointGroup)
+		md = &dstMetadata
+		mdm = &dstMetadataMask
+	}
+
 	// Install the rule in policy table
 	ruleFlow, err := self.policyTable.NewFlow(ofctrl.FlowMatch{
-		Priority:  FLOW_MATCH_PRIORITY,
-		Ethertype: 0x0800,
-		IpDa:      ipDa,
-		IpDaMask:  ipDaMask,
-		IpSa:      ipSa,
-		IpSaMask:  ipSaMask,
-		//FIXME: set IP proto, tcp ports and metadata
+		Priority:     FLOW_MATCH_PRIORITY,
+		Ethertype:    0x0800,
+		IpDa:         ipDa,
+		IpDaMask:     ipDaMask,
+		IpSa:         ipSa,
+		IpSaMask:     ipSaMask,
+		IpProto:      rule.IpProtocol,
+		TcpSrcPort:   rule.SrcPort,
+		TcpDstPort:   rule.DstPort,
+		UdpSrcPort:   rule.SrcPort,
+		UdpDstPort:   rule.DstPort,
+		Metadata:     md,
+		MetadataMask: mdm,
 	})
 	if err != nil {
 		log.Errorf("Error adding flow for rule {%v}. Err: %v", rule, err)
