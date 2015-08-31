@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net"
 	"net/rpc"
+	"strings"
 
 	//"github.com/shaleman/libOpenflow/openflow13"
 	//"github.com/shaleman/libOpenflow/protocol"
@@ -219,11 +220,18 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Install VNI to vlan mapping for each vni
 	for vni, vlan := range self.agent.vniVlanMap {
 		// Install a flow entry for  VNI/vlan and point it to macDest table
-		portVlanFlow, _ := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
 			Priority:  FLOW_MATCH_PRIORITY,
 			InputPort: portNo,
 			TunnelId:  uint64(vni),
 		})
+		if err != nil && strings.Contains(err.Error(), "Flow already exists") {
+			log.Infof("VTEP %s already exists", remoteIp.String())
+			return nil
+		} else if err != nil {
+			log.Errorf("Error adding Flow for VNI %d. Err: %v", vni, err)
+			return err
+		}
 		portVlanFlow.SetVlan(*vlan)
 
 		// Set the metadata to indicate packet came in from VTEP port
