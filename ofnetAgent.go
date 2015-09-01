@@ -218,7 +218,7 @@ func (self *OfnetAgent) AddMaster(masterInfo *OfnetNode, ret *bool) error {
 	// Register the agent with the master
 	err := rpcHub.Client(master.HostAddr, master.HostPort).Call("OfnetMaster.RegisterNode", &myInfo, &resp)
 	if err != nil {
-		log.Fatalf("Failed to register with the master %+v. Err: %v", master, err)
+		log.Errorf("Failed to register with the master %+v. Err: %v", master, err)
 		return err
 	}
 
