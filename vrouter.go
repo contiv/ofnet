@@ -44,8 +44,9 @@ import (
 // Vrouter state.
 // One Vrouter instance exists on each host
 type Vrouter struct {
-	agent    *OfnetAgent      // Pointer back to ofnet agent that owns this
-	ofSwitch *ofctrl.OFSwitch // openflow switch we are talking to
+	agent       *OfnetAgent      // Pointer back to ofnet agent that owns this
+	ofSwitch    *ofctrl.OFSwitch // openflow switch we are talking to
+	policyAgent *PolicyAgent     // Policy agent
 
 	// Fgraph tables
 	inputTable *ofctrl.Table // Packet lookup starts here
@@ -67,6 +68,9 @@ func NewVrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vrouter {
 	// Keep a reference to the agent
 	vrouter.agent = agent
 
+	// Create policy agent
+	vrouter.policyAgent = NewPolicyAgent(agent, rpcServ)
+
 	// Create a flow dbs and my router mac
 	vrouter.flowDb = make(map[string]*ofctrl.Flow)
 	vrouter.portVlanFlowDb = make(map[uint32]*ofctrl.Flow)
@@ -87,6 +91,9 @@ func (self *Vrouter) SwitchConnected(sw *ofctrl.OFSwitch) {
 	self.ofSwitch = sw
 
 	log.Infof("Switch connected(vrouter). installing flows")
+
+	// Tell the policy agent about the switch
+	self.policyAgent.SwitchConnected(sw)
 
 	// Init the Fgraph
 	self.initFgraph()
@@ -136,7 +143,16 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	// Set the vlan and install it
 	portVlanFlow.SetVlan(endpoint.Vlan)
-	err = portVlanFlow.Next(self.ipTable)
+
+	// Set source endpoint group if specified
+	if endpoint.EndpointGroup != 0 {
+		metadata, metadataMask := SrcGroupMetadata(endpoint.EndpointGroup)
+		portVlanFlow.SetMetadata(metadata, metadataMask)
+	}
+
+	// Point it to dst group table for policy lookups
+	dstGrpTbl := self.ofSwitch.GetTable(DST_GRP_TBL_ID)
+	err = portVlanFlow.Next(dstGrpTbl)
 	if err != nil {
 		log.Errorf("Error installing portvlan entry. Err: %v", err)
 		return err
@@ -176,6 +192,13 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
+	// Install dst group entry for the endpoint
+	err = self.policyAgent.AddEndpoint(&endpoint)
+	if err != nil {
+		log.Errorf("Error adding endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+		return err
+	}
+
 	// Store the flow
 	self.flowDb[endpoint.IpAddr.String()] = ipFlow
 
@@ -205,6 +228,13 @@ func (self *Vrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	err := ipFlow.Delete()
 	if err != nil {
 		log.Errorf("Error deleting the endpoint: %+v. Err: %v", endpoint, err)
+	}
+
+	// Remove the endpoint from policy tables
+	err = self.policyAgent.DelEndpoint(&endpoint)
+	if err != nil {
+		log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+		return err
 	}
 
 	return nil
@@ -297,6 +327,13 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		return err
 	}
 
+	// Install dst group entry for the endpoint
+	err = self.policyAgent.AddEndpoint(endpoint)
+	if err != nil {
+		log.Errorf("Error adding endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+		return err
+	}
+
 	// Store it in flow db
 	self.flowDb[endpoint.IpAddr.String()] = ipFlow
 
@@ -318,11 +355,15 @@ func (self *Vrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 		log.Errorf("Error deleting the endpoint: %+v. Err: %v", endpoint, err)
 	}
 
+	// Remove the endpoint from policy tables
+	err = self.policyAgent.DelEndpoint(endpoint)
+	if err != nil {
+		log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+		return err
+	}
+
 	return nil
 }
-
-const VLAN_TBL_ID = 1
-const IP_TBL_ID = 4
 
 // initialize Fgraph on the switch
 func (self *Vrouter) initFgraph() error {
@@ -332,6 +373,13 @@ func (self *Vrouter) initFgraph() error {
 	self.inputTable = sw.DefaultTable()
 	self.vlanTable, _ = sw.NewTable(VLAN_TBL_ID)
 	self.ipTable, _ = sw.NewTable(IP_TBL_ID)
+
+	// Init policy tables
+	err := self.policyAgent.InitTables(IP_TBL_ID)
+	if err != nil {
+		log.Fatalf("Error installing policy table. Err: %v", err)
+		return err
+	}
 
 	//Create all drop entries
 	// Drop mcast source mac
