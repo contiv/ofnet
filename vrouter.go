@@ -33,6 +33,7 @@ import (
 	"errors"
 	"net"
 	"net/rpc"
+	"strings"
 
 	"github.com/contiv/ofnet/ofctrl"
 	"github.com/shaleman/libOpenflow/openflow13"
@@ -244,10 +245,18 @@ func (self *Vrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 // to ofp port number.
 func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Install a flow entry for default VNI/vlan and point it to IP table
-	portVlanFlow, _ := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+	portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
 		Priority:  FLOW_MATCH_PRIORITY,
 		InputPort: portNo,
 	})
+	if err != nil && strings.Contains(err.Error(), "Flow already exists") {
+		log.Infof("VTEP %s already exists", remoteIp.String())
+		return nil
+	} else if err != nil {
+		log.Errorf("Error adding Flow for VTEP %v. Err: %v", remoteIp, err)
+		return err
+	}
+
 	// FIXME: Need to match on tunnelId and set vlan-id per VRF
 	// FIXME: not needed till multi-vrf support
 	// portVlanFlow.SetVlan(1)
