@@ -86,7 +86,7 @@ func (self *PolicyAgent) SwitchDisconnected(sw *ofctrl.OFSwitch) {
 //
 
 // DstGroupMetadata returns metadata for dst group
-func DstGroupMetadata(groupId uint32) (uint64, uint64) {
+func DstGroupMetadata(groupId int) (uint64, uint64) {
 	metadata := uint64(groupId) << 1
 	metadataMask := uint64(0xfffe)
 	metadata = metadata & metadataMask
@@ -95,7 +95,7 @@ func DstGroupMetadata(groupId uint32) (uint64, uint64) {
 }
 
 // SrcGroupMetadata returns metadata for src group
-func SrcGroupMetadata(groupId uint32) (uint64, uint64) {
+func SrcGroupMetadata(groupId int) (uint64, uint64) {
 	metadata := uint64(groupId) << 16
 	metadataMask := uint64(0x7fff0000)
 	metadata = metadata & metadataMask
@@ -244,10 +244,18 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 	}
 
 	// Point it to next table
-	err = ruleFlow.Next(self.nextTable)
-	if err != nil {
-		log.Errorf("Error installing flow {%+v}. Err: %v", ruleFlow, err)
-		return err
+	if rule.Action == "accept" {
+		err = ruleFlow.Next(self.nextTable)
+		if err != nil {
+			log.Errorf("Error installing flow {%+v}. Err: %v", ruleFlow, err)
+			return err
+		}
+	} else if rule.Action == "deny" {
+		err = ruleFlow.Next(self.ofSwitch.DropAction())
+		if err != nil {
+			log.Errorf("Error installing flow {%+v}. Err: %v", ruleFlow, err)
+			return err
+		}
 	}
 
 	// save the rule

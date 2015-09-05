@@ -67,7 +67,7 @@ type OfnetAgent struct {
 // local End point information
 type EndpointInfo struct {
 	PortNo        uint32
-	EndpointGroup uint32
+	EndpointGroup int
 	MacAddr       net.HardwareAddr
 	Vlan          uint16
 	IpAddr        net.IP

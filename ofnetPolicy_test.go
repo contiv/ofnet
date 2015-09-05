@@ -64,8 +64,6 @@ func TestPolicyAddDelete(t *testing.T) {
 		t.Fatalf("Error adding controller to ovs: %s", brName)
 	}
 
-	defer func() { ovsDriver.DeleteBridge(brName) }()
-
 	// Wait for switch to connect to controller
 	ofnetAgent.WaitForSwitchConnection()
 
@@ -87,6 +85,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	err = ofnetAgent.AddLocalEndpoint(endpoint)
 	if err != nil {
 		t.Errorf("Error adding endpoint. Err: %v", err)
+		return
 	}
 
 	tcpRule := &OfnetPolicyRule{
@@ -98,6 +97,7 @@ func TestPolicyAddDelete(t *testing.T) {
 		IpProtocol:       6,
 		DstPort:          100,
 		SrcPort:          200,
+		Action:           "accept",
 	}
 
 	log.Infof("Adding rule: %+v", tcpRule)
@@ -106,6 +106,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	err = ofnetMaster.AddRule(tcpRule)
 	if err != nil {
 		t.Errorf("Error installing tcpRule {%+v}. Err: %v", tcpRule, err)
+		return
 	}
 
 	udpRule := &OfnetPolicyRule{
@@ -117,6 +118,7 @@ func TestPolicyAddDelete(t *testing.T) {
 		IpProtocol:       17,
 		DstPort:          300,
 		SrcPort:          400,
+		Action:           "deny",
 	}
 
 	log.Infof("Adding rule: %+v", udpRule)
@@ -125,18 +127,21 @@ func TestPolicyAddDelete(t *testing.T) {
 	err = ofnetMaster.AddRule(udpRule)
 	if err != nil {
 		t.Errorf("Error installing udpRule {%+v}. Err: %v", udpRule, err)
+		return
 	}
 
 	// Get all the flows
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
+		return
 	}
 
 	// verify src group flow
-	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=push_vlan:0x8100,set_field:4097->vlan_vid,write_metadata:0x640000/0x7fff0000")
+	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=write_metadata:0x640000/0x7fff0000")
 	if !ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
 		t.Errorf("Could not find the route %s on ovs %s", srcGrpFlowMatch, brName)
+		return
 	}
 
 	log.Infof("Found src group %s on ovs %s", srcGrpFlowMatch, brName)
@@ -145,6 +150,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	dstGrpFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.2.2.2 actions=write_metadata:0xc8/0xfffe")
 	if !ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
 		t.Errorf("Could not find the route %s on ovs %s", dstGrpFlowMatch, brName)
+		return
 	}
 
 	log.Infof("Found dst group %s on ovs %s", dstGrpFlowMatch, brName)
@@ -153,6 +159,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	tcpFlowMatch := fmt.Sprintf("priority=100,tcp,metadata=0x640190/0x7ffffffe,nw_src=10.10.10.0/24,nw_dst=10.1.1.0/24,tp_src=200,tp_dst=100")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, tcpFlowMatch) {
 		t.Errorf("Could not find the route %s on ovs %s", tcpFlowMatch, brName)
+		return
 	}
 
 	log.Infof("Found tcp rule %s on ovs %s", tcpFlowMatch, brName)
@@ -161,6 +168,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	udpFlowMatch := fmt.Sprintf("priority=100,udp,metadata=0x12c0320/0x7ffffffe,nw_src=20.20.20.0/24,nw_dst=20.2.2.0/24,tp_src=400,tp_dst=300")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, udpFlowMatch) {
 		t.Errorf("Could not find the route %s on ovs %s", udpFlowMatch, brName)
+		return
 	}
 
 	log.Infof("Found udp rule %s on ovs %s", udpFlowMatch, brName)
@@ -169,14 +177,17 @@ func TestPolicyAddDelete(t *testing.T) {
 	err = ofnetMaster.DelRule(tcpRule)
 	if err != nil {
 		t.Errorf("Error deleting tcpRule {%+v}. Err: %v", tcpRule, err)
+		return
 	}
 	err = ofnetMaster.DelRule(udpRule)
 	if err != nil {
 		t.Errorf("Error deleting udpRule {%+v}. Err: %v", udpRule, err)
+		return
 	}
 	err = ofnetAgent.RemoveLocalEndpoint(endpoint.PortNo)
 	if err != nil {
 		t.Errorf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
+		return
 	}
 
 	log.Infof("Deleted all policy entries")
@@ -185,21 +196,29 @@ func TestPolicyAddDelete(t *testing.T) {
 	flowList, err = ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
+		return
 	}
 
 	// Make sure flows are gone
 	if ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
 		t.Errorf("Still found the flow %s on ovs %s", srcGrpFlowMatch, brName)
+		return
 	}
 	if ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
 		t.Errorf("Still found the flow %s on ovs %s", dstGrpFlowMatch, brName)
+		return
 	}
 	if ofctlFlowMatch(flowList, POLICY_TBL_ID, tcpFlowMatch) {
 		t.Errorf("Still found the flow %s on ovs %s", tcpFlowMatch, brName)
+		return
 	}
 	if ofctlFlowMatch(flowList, POLICY_TBL_ID, udpFlowMatch) {
 		t.Errorf("Still found the flow %s on ovs %s", udpFlowMatch, brName)
+		return
 	}
 
 	log.Infof("Verified all flows are deleted")
+
+	// Delete the bridge
+	ovsDriver.DeleteBridge(brName)
 }
