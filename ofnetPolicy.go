@@ -64,7 +64,7 @@ func (self *PolicyAgent) SwitchConnected(sw *ofctrl.OFSwitch) {
 	// Keep a reference to the switch
 	self.ofSwitch = sw
 
-	log.Infof("Switch connected(vrouter). installing flows")
+	log.Infof("Switch connected(policyAgent).")
 }
 
 // Handle switch disconnected notification
