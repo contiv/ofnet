@@ -554,29 +554,25 @@ func (self *OvsDriver) GetOfpPortNo(intfName string) (uint32, error) {
 	}
 
 	for {
-		row, _ := self.ovsClient.Transact("Open_vSwitch", selectOp)
-		value := row[0].Rows[0]["ofport"]
-		if reflect.TypeOf(value).Kind() != reflect.Uint32 &&
-			reflect.TypeOf(value).Kind() != reflect.Float64 {
-			//retry few more time. Due to asynchronous call between
-			//port creation and populating ovsdb entry for the interface
-			//may not be populated instantly.
-			if retryNo == 5 {
-				return 0, errors.New("Unknown field type")
+		row, err := self.ovsClient.Transact("Open_vSwitch", selectOp)
+
+		if err == nil {
+			value := row[0].Rows[0]["ofport"]
+			if reflect.TypeOf(value).Kind() == reflect.Float64 {
+				//retry few more time. Due to asynchronous call between
+				//port creation and populating ovsdb entry for the interface
+				//may not be populated instantly.
+				var ofpPort uint32 = uint32(reflect.ValueOf(value).Float())
+				return ofpPort, nil
 			}
-			retryNo++
-			log.Info(retryNo)
-			time.Sleep(200 * time.Millisecond)
-			continue
 		}
-		log.Infof("Value ", value)
-		switch t := value.(type) {
-		case uint32:
-			return t, nil
-		case float64:
-			var ofpPort uint32 = uint32(t)
-			return ofpPort, nil
+		log.Info(retryNo)
+		time.Sleep(200 * time.Millisecond)
+
+		if retryNo == 5 {
+			return 0, errors.New("Unknown field type")
 		}
+		retryNo++
 	}
 }
 
