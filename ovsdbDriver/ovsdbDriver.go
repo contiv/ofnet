@@ -566,11 +566,10 @@ func (self *OvsDriver) GetOfpPortNo(intfName string) (uint32, error) {
 				return ofpPort, nil
 			}
 		}
-		log.Info(retryNo)
 		time.Sleep(200 * time.Millisecond)
 
 		if retryNo == 5 {
-			return 0, errors.New("Unknown field type")
+			return 0, errors.New("ofPort not found")
 		}
 		retryNo++
 	}
