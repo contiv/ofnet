@@ -91,6 +91,7 @@ type OfnetEndpoint struct {
 // OfnetPolicyRule has security rule to be installed
 type OfnetPolicyRule struct {
 	RuleId           string // Unique identifier for the rule
+	Priority         int    // Priority for the rule (1..100. 100 is highest)
 	SrcEndpointGroup int    // Source endpoint group
 	DstEndpointGroup int    // Destination endpoint group
 	SrcIpAddr        string // source IP addrss and mask

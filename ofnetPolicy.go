@@ -224,7 +224,7 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 
 	// Install the rule in policy table
 	ruleFlow, err := self.policyTable.NewFlow(ofctrl.FlowMatch{
-		Priority:     FLOW_MATCH_PRIORITY,
+		Priority:     uint16(FLOW_POLICY_PRIORITY_OFFSET + rule.Priority),
 		Ethertype:    0x0800,
 		IpDa:         ipDa,
 		IpDaMask:     ipDaMask,

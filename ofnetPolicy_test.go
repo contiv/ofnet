@@ -90,6 +90,7 @@ func TestPolicyAddDelete(t *testing.T) {
 
 	tcpRule := &OfnetPolicyRule{
 		RuleId:           "tcpRule",
+		Priority:         100,
 		SrcEndpointGroup: 100,
 		DstEndpointGroup: 200,
 		SrcIpAddr:        "10.10.10.10/24",
@@ -111,6 +112,7 @@ func TestPolicyAddDelete(t *testing.T) {
 
 	udpRule := &OfnetPolicyRule{
 		RuleId:           "udpRule",
+		Priority:         100,
 		SrcEndpointGroup: 300,
 		DstEndpointGroup: 400,
 		SrcIpAddr:        "20.20.20.20/24",
@@ -140,7 +142,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	// verify src group flow
 	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=write_metadata:0x640000/0x7fff0000")
 	if !ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", srcGrpFlowMatch, brName)
+		t.Errorf("Could not find the flow %s on ovs %s", srcGrpFlowMatch, brName)
 		return
 	}
 
@@ -149,25 +151,25 @@ func TestPolicyAddDelete(t *testing.T) {
 	// verify dst group flow
 	dstGrpFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.2.2.2 actions=write_metadata:0xc8/0xfffe")
 	if !ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", dstGrpFlowMatch, brName)
+		t.Errorf("Could not find the flow %s on ovs %s", dstGrpFlowMatch, brName)
 		return
 	}
 
 	log.Infof("Found dst group %s on ovs %s", dstGrpFlowMatch, brName)
 
 	// verify tcp rule flow entry exists
-	tcpFlowMatch := fmt.Sprintf("priority=100,tcp,metadata=0x640190/0x7ffffffe,nw_src=10.10.10.0/24,nw_dst=10.1.1.0/24,tp_src=200,tp_dst=100")
+	tcpFlowMatch := fmt.Sprintf("priority=110,tcp,metadata=0x640190/0x7ffffffe,nw_src=10.10.10.0/24,nw_dst=10.1.1.0/24,tp_src=200,tp_dst=100")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, tcpFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", tcpFlowMatch, brName)
+		t.Errorf("Could not find the flow %s on ovs %s", tcpFlowMatch, brName)
 		return
 	}
 
 	log.Infof("Found tcp rule %s on ovs %s", tcpFlowMatch, brName)
 
 	// verify udp rule flow
-	udpFlowMatch := fmt.Sprintf("priority=100,udp,metadata=0x12c0320/0x7ffffffe,nw_src=20.20.20.0/24,nw_dst=20.2.2.0/24,tp_src=400,tp_dst=300")
+	udpFlowMatch := fmt.Sprintf("priority=110,udp,metadata=0x12c0320/0x7ffffffe,nw_src=20.20.20.0/24,nw_dst=20.2.2.0/24,tp_src=400,tp_dst=300")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, udpFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", udpFlowMatch, brName)
+		t.Errorf("Could not find the flow %s on ovs %s", udpFlowMatch, brName)
 		return
 	}
 
