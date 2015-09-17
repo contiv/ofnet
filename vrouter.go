@@ -262,6 +262,8 @@ func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// FIXME: not needed till multi-vrf support. We cant pop vlan unless flow matches on vlan
 	// portVlanFlow.SetVlan(1)
 
+	// Point it to next table.
+	// Note that we bypass policy lookup on dest host.
 	portVlanFlow.Next(self.ipTable)
 
 	// FIXME: walk all the routes and see if we can install it
