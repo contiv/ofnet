@@ -71,6 +71,7 @@ type EndpointInfo struct {
 	MacAddr       net.HardwareAddr
 	Vlan          uint16
 	IpAddr        net.IP
+	VrfId         uint16
 }
 
 const FLOW_MATCH_PRIORITY = 100        // Priority for all match flows
@@ -280,7 +281,7 @@ func (self *OfnetAgent) RemoveMaster(masterInfo *OfnetNode) error {
 }
 
 // Add a local endpoint.
-// This takes ofp port number, mac address, vlan and IP address of the port.
+// This takes ofp port number, mac address, vlan , VrfId and IP address of the port.
 func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 	// Add port vlan mapping
 	self.portVlanMap[endpoint.PortNo] = &endpoint.Vlan
@@ -300,7 +301,7 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 		EndpointType:  "internal",
 		EndpointGroup: endpoint.EndpointGroup,
 		IpAddr:        endpoint.IpAddr,
-		VrfId:         0, // FIXME set VRF correctly
+		VrfId:         endpoint.Vlan, //This has to be changed to vrfId when there is multi network per vrf support
 		MacAddrStr:    endpoint.MacAddr.String(),
 		Vlan:          endpoint.Vlan,
 		Vni:           *vni,

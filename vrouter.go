@@ -57,6 +57,7 @@ type Vrouter struct {
 	// Flow Database
 	flowDb         map[string]*ofctrl.Flow // Database of flow entries
 	portVlanFlowDb map[uint32]*ofctrl.Flow // Database of flow entries
+	vlanDb         map[uint16]*Vlan        // Database of known vlans
 
 	// Router Mac to be used
 	myRouterMac net.HardwareAddr
@@ -142,9 +143,15 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
+	vni := self.agent.vlanVniMap[endpoint.Vlan]
+	if vni == nil {
+		log.Errorf("VNI for vlan %d is not known", endpoint.Vlan)
+		return errors.New("Unknown Vlan")
+	}
+
 	// Set the vlan and install it
 	// FIXME: Dont set the vlan till multi-vrf support. We cant pop vlan unless flow matches on vlan
-	// portVlanFlow.SetVlan(endpoint.Vlan)
+	portVlanFlow.SetVlan(endpoint.Vlan)
 
 	// Set source endpoint group if specified
 	if endpoint.EndpointGroup != 0 {
@@ -175,6 +182,7 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		Priority:  FLOW_MATCH_PRIORITY,
 		Ethertype: 0x0800,
 		IpDa:      &endpoint.IpAddr,
+		VlanId:    endpoint.Vlan,
 	})
 	if err != nil {
 		log.Errorf("Error creating flow for endpoint: %+v. Err: %v", endpoint, err)
@@ -186,6 +194,7 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	// Set Mac addresses
 	ipFlow.SetMacDa(destMacAddr)
 	ipFlow.SetMacSa(self.myRouterMac)
+	ipFlow.PopVlan()
 
 	// Point the route at output port
 	err = ipFlow.Next(outPort)
@@ -242,51 +251,131 @@ func (self *Vrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	return nil
 }
 
-// Add virtual tunnel end point. This is mainly used for mapping remote vtep IP
-// to ofp port number.
 func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
-	// Install a flow entry for default VNI/vlan and point it to IP table
-	portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
-		Priority:  FLOW_MATCH_PRIORITY,
-		InputPort: portNo,
-	})
-	if err != nil && strings.Contains(err.Error(), "Flow already exists") {
-		log.Infof("VTEP %s already exists", remoteIp.String())
-		return nil
-	} else if err != nil {
-		log.Errorf("Error adding Flow for VTEP %v. Err: %v", remoteIp, err)
-		return err
+	// Install VNI to vlan mapping for each vni
+	for vni, vlan := range self.agent.vniVlanMap {
+		// Install a flow entry for  VNI/vlan and point it to Ip table
+		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+			Priority:  FLOW_MATCH_PRIORITY,
+			InputPort: portNo,
+			TunnelId:  uint64(vni),
+		})
+		if err != nil && strings.Contains(err.Error(), "Flow already exists") {
+			log.Infof("VTEP %s already exists", remoteIp.String())
+			return nil
+		} else if err != nil {
+			log.Errorf("Error adding Flow for VTEP %v. Err: %v", remoteIp, err)
+			return err
+		}
+
+		portVlanFlow.SetVlan(*vlan)
+
+		// Set the metadata to indicate packet came in from VTEP port
+		portVlanFlow.SetMetadata(METADATA_RX_VTEP, METADATA_RX_VTEP)
+
+		// Point to next table
+		// Note that we bypass policy lookup on dest host.
+		portVlanFlow.Next(self.ipTable)
 	}
 
-	// FIXME: Need to match on tunnelId and set vlan-id per VRF
-	// FIXME: not needed till multi-vrf support. We cant pop vlan unless flow matches on vlan
-	// portVlanFlow.SetVlan(1)
-
-	// Point it to next table.
-	// Note that we bypass policy lookup on dest host.
-	portVlanFlow.Next(self.ipTable)
-
-	// FIXME: walk all the routes and see if we can install it
-	//        This could happen if a route made it to us before VTEP
-
+	// Walk all vlans and add vtep port to the vlan
+	for vlanId, vlan := range self.vlanDb {
+		vni := self.agent.vlanVniMap[vlanId]
+		if vni == nil {
+			log.Errorf("Can not find vni for vlan: %d", vlanId)
+		}
+		output, _ := self.ofSwitch.OutputPort(portNo)
+		vlan.allFlood.AddTunnelOutput(output, uint64(*vni))
+	}
 	return nil
 }
 
 // Remove a VTEP port
 func (self *Vrouter) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
+	// Remove the VTEP from flood lists
+	output, _ := self.ofSwitch.OutputPort(portNo)
+	for _, vlan := range self.vlanDb {
+		// Walk all vlans and remove from flood lists
+		vlan.allFlood.RemoveOutput(output)
+	}
+
+	// FIXME: uninstall vlan-vni mapping.
 	return nil
 }
 
 // Add a vlan.
 // This is mainly used for mapping vlan id to Vxlan VNI
 func (self *Vrouter) AddVlan(vlanId uint16, vni uint32) error {
-	// FIXME: Add this for multiple VRF support
+	// check if the vlan already exists. if it does, we are done
+	if self.vlanDb[vlanId] != nil {
+		return nil
+	}
+
+	// create new vlan object
+	vlan := new(Vlan)
+	vlan.Vni = vni
+	vlan.localPortList = make(map[uint32]*uint32)
+	vlan.allPortList = make(map[uint32]*uint32)
+
+	// Create flood entries
+	vlan.localFlood, _ = self.ofSwitch.NewFlood()
+	vlan.allFlood, _ = self.ofSwitch.NewFlood()
+
+	// Walk all VTEP ports and add vni-vlan mapping for new VNI
+	for _, vtepPort := range self.agent.vtepTable {
+		// Install a flow entry for  VNI/vlan and point it to macDest table
+		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+			Priority:  FLOW_MATCH_PRIORITY,
+			InputPort: *vtepPort,
+			TunnelId:  uint64(vni),
+		})
+		if err != nil {
+			log.Errorf("Error creating port vlan flow for vlan %d. Err: %v", vlanId, err)
+			return err
+		}
+
+		// Set vlan id
+		portVlanFlow.SetVlan(vlanId)
+
+		// Set the metadata to indicate packet came in from VTEP port
+		portVlanFlow.SetMetadata(METADATA_RX_VTEP, METADATA_RX_VTEP)
+
+		// Point to next table
+		dstGrpTbl := self.ofSwitch.GetTable(DST_GRP_TBL_ID)
+		portVlanFlow.Next(dstGrpTbl)
+	}
+
+	// Walk all VTEP ports and add it to the allFlood list
+	for _, vtepPort := range self.agent.vtepTable {
+		output, _ := self.ofSwitch.OutputPort(*vtepPort)
+		vlan.allFlood.AddTunnelOutput(output, uint64(vni))
+	}
+
+	// store it in DB
+	self.vlanDb[vlanId] = vlan
+
 	return nil
 }
 
 // Remove a vlan
 func (self *Vrouter) RemoveVlan(vlanId uint16, vni uint32) error {
-	// FIXME: Add this for multiple VRF support
+	vlan := self.vlanDb[vlanId]
+	if vlan == nil {
+		log.Fatalf("Could not find the vlan %d", vlanId)
+	}
+
+	// Make sure the flood lists are empty
+	if (vlan.allFlood.NumOutput() != 0) || (vlan.localFlood.NumOutput() != 0) {
+		log.Fatalf("VLAN flood list is not empty")
+	}
+
+	// Uninstall the flood lists
+	vlan.allFlood.Delete()
+	vlan.localFlood.Delete()
+
+	// Remove it from DB
+	delete(self.vlanDb, vlanId)
+
 	return nil
 }
 
@@ -302,6 +391,13 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		return errors.New("VTEP not found")
 	}
 
+	// map VNI to vlan Id
+	VrfVniId := self.agent.vlanVniMap[endpoint.VrfId]
+	if VrfVniId == nil {
+		log.Errorf("Endpoint %+v on unknown VNI: %d", endpoint, endpoint.Vni)
+		return errors.New("Unknown VNI")
+	}
+
 	// Install the endpoint in OVS
 	// Create an output port for the vtep
 	outPort, err := self.ofSwitch.OutputPort(*vtepPort)
@@ -315,6 +411,7 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		Priority:  FLOW_MATCH_PRIORITY,
 		Ethertype: 0x0800,
 		IpDa:      &endpoint.IpAddr,
+		VlanId:    endpoint.VrfId,
 	})
 	if err != nil {
 		log.Errorf("Error creating flow for endpoint: %+v. Err: %v", endpoint, err)
@@ -331,7 +428,10 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	// FIXME: hardcode VNI for default VRF.
 	// FIXME: We need to use fabric VNI per VRF
 	// FIXME: Cant pop vlan tag till the flow matches on vlan.
-	ipFlow.SetTunnelId(1)
+	//	ipFlow.SetTunnelId(1)
+	ipFlow.PopVlan()
+	ipFlow.SetTunnelId(uint64(endpoint.Vni))
+	ipFlow.Next(outPort)
 
 	// Point it to output port
 	err = ipFlow.Next(outPort)

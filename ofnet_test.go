@@ -160,8 +160,10 @@ func TestOfnetInit(t *testing.T) {
 // test adding vlan
 func TestOfnetSetupVlan(t *testing.T) {
 	for i := 0; i < NUM_AGENT; i++ {
-		for j := 1; j < 10; j++ {
-			log.Infof("Adding Vlan %d on %s", j, localIpList[i])
+		log.Info("Infex %d \n", i)
+		for j := 1; j < 5; j++ {
+			log.Info("Infex %d \n", j)
+			//log.Infof("Adding Vlan %d on %s", j, localIpList[i])
 			err := vrtrAgents[i].AddVlan(uint16(j), uint32(j))
 			if err != nil {
 				t.Errorf("Error adding vlan %d. Err: %v", j, err)
