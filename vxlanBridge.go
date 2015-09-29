@@ -214,7 +214,7 @@ func (self *Vxlan) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	vlanId := self.agent.vniVlanMap[endpoint.Vni]
 	vlan := self.vlanDb[*vlanId]
 	output, err := self.ofSwitch.OutputPort(endpoint.PortNo)
-	if err != nil {
+	if err == nil {
 		vlan.localFlood.RemoveOutput(output)
 		vlan.allFlood.RemoveOutput(output)
 	}
@@ -287,8 +287,9 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		}
 		output, err := self.ofSwitch.OutputPort(portNo)
 		if err != nil {
-			vlan.allFlood.AddTunnelOutput(output, uint64(*vni))
+			return err
 		}
+		vlan.allFlood.AddTunnelOutput(output, uint64(*vni))
 	}
 
 	return nil
