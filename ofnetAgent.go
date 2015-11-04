@@ -26,6 +26,7 @@ package ofnet
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/rpc"
 	"time"
@@ -34,6 +35,10 @@ import (
 	"github.com/contiv/ofnet/rpcHub"
 
 	log "github.com/Sirupsen/logrus"
+	api "github.com/osrg/gobgp/api"
+	"github.com/osrg/gobgp/packet"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 // OfnetAgent state
@@ -62,6 +67,9 @@ type OfnetAgent struct {
 	// Endpoint database
 	endpointDb      map[string]*OfnetEndpoint // all known endpoints
 	localEndpointDb map[uint32]*OfnetEndpoint // local port to endpoint map
+
+	modRibCh  chan *api.Path
+	advPathCh chan *api.Path
 }
 
 // local End point information
@@ -129,6 +137,15 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 		agent.datapath = NewVxlan(agent, rpcServ)
 	case "vlan":
 		agent.datapath = NewVlanBridge(agent, rpcServ)
+	case "vlrouter":
+		agent.datapath = NewVlrouter(agent, rpcServ)
+		go func() {
+			err := agent.Serve()
+			if err != nil {
+				log.Errorf("protocol server finished with err: %s", err)
+			}
+		}()
+
 	default:
 		log.Fatalf("Unknown Datapath %s", dpName)
 	}
@@ -510,4 +527,172 @@ func (self *OfnetAgent) EndpointDel(epreg *OfnetEndpoint, ret *bool) error {
 func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 	log.Infof("Received dummy route RPC call")
 	return nil
+}
+
+func (self *OfnetAgent) Serve() error {
+
+	self.modRibCh = make(chan *api.Path, 16)
+	self.advPathCh = make(chan *api.Path, 16)
+
+	timeout := grpc.WithTimeout(time.Second)
+	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := api.NewGobgpApiClient(conn)
+	if client == nil {
+
+	}
+	path := &api.Path{
+		Pattrs: make([][]byte, 0),
+	}
+
+	routerId := "50.1.1.1" //d.config.Bgp.Global.GlobalConfig.RouterId.String()
+	path.Nlri, _ = bgp.NewIPAddrPrefix(uint8(32), routerId).Serialize()
+	n, _ := bgp.NewPathAttributeNextHop("0.0.0.0").Serialize()
+	path.Pattrs = append(path.Pattrs, n)
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
+	path.Pattrs = append(path.Pattrs, origin)
+
+	peerIP := "50.1.1.2" // get from Config
+
+	epreg := &OfnetEndpoint{
+		EndpointID:   peerIP,
+		EndpointType: "external",
+		IpAddr:       net.ParseIP(peerIP),
+		VrfId:        0, // FIXME set VRF correctly
+		MacAddrStr:   "88:1d:fc:cf:a7:fc",
+		Vlan:         1,
+		PortNo:       1,
+		Timestamp:    time.Now(),
+	}
+
+	// Install the endpoint in datapath
+	// First, add the endpoint to local routing table
+	self.endpointDb[epreg.EndpointID] = epreg
+	err = self.datapath.AddEndpoint(epreg)
+
+	if err != nil {
+		log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
+		return err
+	}
+
+	self.advPathCh <- path
+
+	go self.monitorBest()
+
+	for {
+		select {
+		case p := <-self.modRibCh:
+			err = self.modRib(p)
+			if err != nil {
+				log.Error("failed to mod rib: ", err)
+			}
+		case p := <-self.advPathCh:
+			//err = self.advPath(p)
+			if err != nil {
+				log.Error("failed to adv path: ", err, p)
+			}
+		}
+	}
+}
+
+func (self *OfnetAgent) monitorBest() error {
+
+	timeout := grpc.WithTimeout(time.Second)
+	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	client := api.NewGobgpApiClient(conn)
+	if client == nil {
+
+	}
+	arg := &api.Arguments{
+		Resource: api.Resource_GLOBAL,
+		Rf:       uint32(bgp.RF_IPv4_UC),
+	}
+
+	stream, err := client.MonitorBestChanged(context.Background(), arg)
+	if err != nil {
+		return err
+	}
+
+	for {
+		dst, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		self.modRibCh <- dst.Paths[0]
+	}
+	return nil
+}
+
+func (self *OfnetAgent) modRib(path *api.Path) error {
+	var nlri bgp.AddrPrefixInterface
+	var nexthop string
+
+	if len(path.Nlri) > 0 {
+		nlri = &bgp.IPAddrPrefix{}
+		err := nlri.DecodeFromBytes(path.Nlri)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, attr := range path.Pattrs {
+		p, err := bgp.GetPathAttribute(attr)
+		if err != nil {
+			return err
+		}
+
+		err = p.DecodeFromBytes(attr)
+		if err != nil {
+			return err
+		}
+
+		if p.GetType() == bgp.BGP_ATTR_TYPE_NEXT_HOP {
+			nexthop = p.(*bgp.PathAttributeNextHop).Value.String()
+			break
+		}
+	}
+	if nexthop == "0.0.0.0" {
+		return nil
+	}
+
+	if nlri == nil {
+		return fmt.Errorf("no nlri")
+	}
+
+	endpointIP := net.ParseIP(nlri.String())
+	fmt.Println("HERE is the ENDPOINT IP ")
+	fmt.Println(endpointIP)
+	fmt.Println("HERE is the Nexthop IP ")
+	fmt.Println(nexthop)
+
+	epreg := &OfnetEndpoint{
+		EndpointID:   endpointIP.String(),
+		EndpointType: "external",
+		IpAddr:       endpointIP,
+		VrfId:        0, // FIXME set VRF correctly
+		MacAddrStr:   self.endpointDb[nexthop].MacAddrStr,
+		Vlan:         1,
+		OriginatorIp: self.localIp,
+		PortNo:       self.endpointDb[nexthop].PortNo,
+		Timestamp:    time.Now(),
+	}
+
+	// Install the endpoint in datapath
+	// First, add the endpoint to local routing table
+	self.endpointDb[epreg.EndpointID] = epreg
+	err := self.datapath.AddEndpoint(epreg)
+	if err != nil {
+		log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
+		return err
+	}
+	return err
 }
