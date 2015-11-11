@@ -79,6 +79,7 @@ type OfnetEndpoint struct {
 	EndpointType  string    // Type of the endpoint "internal", "external" or "externalRoute"
 	EndpointGroup int       // Endpoint group identifier for policies.
 	IpAddr        net.IP    // IP address of the end point
+	IpMask        net.IP    // IP mask for the end point
 	VrfId         uint16    // IP address namespace
 	MacAddrStr    string    // Mac address of the end point(in string format)
 	Vlan          uint16    // Vlan Id for the endpoint

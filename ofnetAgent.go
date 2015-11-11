@@ -26,17 +26,19 @@ package ofnet
 import (
 	"errors"
 	"fmt"
+	"github.com/contiv/ofnet/ofctrl"
+	"github.com/contiv/ofnet/ovsdbDriver"
+	"github.com/contiv/ofnet/rpcHub"
 	"io"
 	"net"
 	"net/rpc"
+	"os/exec"
 	"time"
-
-	"github.com/contiv/ofnet/ofctrl"
-	"github.com/contiv/ofnet/rpcHub"
 
 	log "github.com/Sirupsen/logrus"
 	api "github.com/osrg/gobgp/api"
 	"github.com/osrg/gobgp/packet"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -70,6 +72,7 @@ type OfnetAgent struct {
 
 	modRibCh  chan *api.Path
 	advPathCh chan *api.Path
+	ovsDriver *ovsdbDriver.OvsDriver
 }
 
 // local End point information
@@ -139,6 +142,7 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 		agent.datapath = NewVlanBridge(agent, rpcServ)
 	case "vlrouter":
 		agent.datapath = NewVlrouter(agent, rpcServ)
+		agent.ovsDriver = ovsdbDriver.NewOvsDriver("contivVlanBridge")
 		go func() {
 			err := agent.Serve()
 			if err != nil {
@@ -530,6 +534,7 @@ func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 }
 
 func (self *OfnetAgent) Serve() error {
+	time.Sleep(10 * time.Second)
 
 	self.modRibCh = make(chan *api.Path, 16)
 	self.advPathCh = make(chan *api.Path, 16)
@@ -554,12 +559,46 @@ func (self *OfnetAgent) Serve() error {
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
-	peerIP := "50.1.1.2" // get from Config
+	self.ovsDriver.CreatePort("inb01", "internal", 1)
+	//link, err := netlink.LinkByName("inb01")
+	//if err != nil {
+	//	return err
+	//}
+	//addr, err := netlink.ParseAddr("50.1.1.1")
+	//err = netlink.AddrAdd(link, addr)
 
+	cmd := exec.Command("ifconfig", "inb01", "50.1.1.1")
+	cmd.Run()
+	cmd = exec.Command("ifconfig", "inb01", "netmask", "255.255.255.0")
+	cmd.Run()
+
+	intf, _ := net.InterfaceByName("inb01")
+
+	fmt.Println("Creating BGP PEER ENDPOINT !!!!!!!!!!!")
 	epreg := &OfnetEndpoint{
+		EndpointID:   routerId,
+		EndpointType: "internal",
+		IpAddr:       net.ParseIP(routerId),
+		IpMask:       net.ParseIP("255.255.255.255"),
+		VrfId:        0,                          // FIXME set VRF correctly
+		MacAddrStr:   intf.HardwareAddr.String(), //link.Attrs().HardwareAddr.String(),
+		Vlan:         1,
+		PortNo:       2,
+		Timestamp:    time.Now(),
+	}
+	// Add the endpoint to local routing table
+	self.endpointDb[routerId] = epreg
+	self.localEndpointDb[epreg.PortNo] = epreg
+
+	err = self.datapath.AddLocalEndpoint(*epreg)
+
+	peerIP := "50.1.1.2" // get from Config
+	fmt.Println("Creating BGP PEER ENDPOINT !!!!!!!!!!!")
+	epreg = &OfnetEndpoint{
 		EndpointID:   peerIP,
 		EndpointType: "external",
 		IpAddr:       net.ParseIP(peerIP),
+		IpMask:       net.ParseIP("255.255.255.255"),
 		VrfId:        0, // FIXME set VRF correctly
 		MacAddrStr:   "88:1d:fc:cf:a7:fc",
 		Vlan:         1,
@@ -573,7 +612,7 @@ func (self *OfnetAgent) Serve() error {
 	err = self.datapath.AddEndpoint(epreg)
 
 	if err != nil {
-		log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
+		log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
 		return err
 	}
 
@@ -668,16 +707,19 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 		return fmt.Errorf("no nlri")
 	}
 
-	endpointIP := net.ParseIP(nlri.String())
+	endpointIPNet, _ := netlink.ParseIPNet(nlri.String())
 	fmt.Println("HERE is the ENDPOINT IP ")
-	fmt.Println(endpointIP)
+	fmt.Println(endpointIPNet)
 	fmt.Println("HERE is the Nexthop IP ")
 	fmt.Println(nexthop)
+	ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
+	fmt.Println(ipmask)
 
 	epreg := &OfnetEndpoint{
-		EndpointID:   endpointIP.String(),
+		EndpointID:   endpointIPNet.IP.Mask(endpointIPNet.Mask).String(),
 		EndpointType: "external",
-		IpAddr:       endpointIP,
+		IpAddr:       endpointIPNet.IP,
+		IpMask:       ipmask,
 		VrfId:        0, // FIXME set VRF correctly
 		MacAddrStr:   self.endpointDb[nexthop].MacAddrStr,
 		Vlan:         1,
