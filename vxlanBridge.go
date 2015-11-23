@@ -67,11 +67,14 @@ type Vxlan struct {
 
 // Vlan info
 type Vlan struct {
-	Vni           uint32             // Vxlan VNI
-	localPortList map[uint32]*uint32 // List of local ports only
-	allPortList   map[uint32]*uint32 // List of local + remote(vtep) ports
-	localFlood    *ofctrl.Flood      // local only flood list
-	allFlood      *ofctrl.Flood      // local + remote flood list
+	Vni            uint32                  // Vxlan VNI
+	localPortList  map[uint32]*uint32      // List of local ports only
+	allPortList    map[uint32]*uint32      // List of local + remote(vtep) ports
+	vtepVlanFlowDb map[uint32]*ofctrl.Flow // VTEP vlan mapping flows
+	localFlood     *ofctrl.Flood           // local only flood list
+	allFlood       *ofctrl.Flood           // local + remote flood list
+	localMacMiss   *ofctrl.Flow            // mac lookup miss entry for locally originated traffic
+	vtepMacMiss    *ofctrl.Flow            // mac lookup miss for traffic coming from vtep
 }
 
 const METADATA_RX_VTEP = 0x1
@@ -320,6 +323,7 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 	vlan.Vni = vni
 	vlan.localPortList = make(map[uint32]*uint32)
 	vlan.allPortList = make(map[uint32]*uint32)
+	vlan.vtepVlanFlowDb = make(map[uint32]*ofctrl.Flow)
 
 	// Create flood entries
 	vlan.localFlood, err = self.ofSwitch.NewFlood()
@@ -353,6 +357,9 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 		// Point to next table
 		// Note that we pypass policy lookup on dest host
 		portVlanFlow.Next(self.macDestTable)
+
+		// save it in cache
+		vlan.vtepVlanFlowDb[*vtepPort] = portVlanFlow
 	}
 
 	// Walk all VTEP ports and add it to the allFlood list
@@ -366,10 +373,10 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 
 	log.Infof("Installing vlan flood entry for vlan: %d", vlanId)
 
-	// Install local flood and remote flood entries in macDestTable
+	// Install local mac miss entries in macDestTable
 	var metadataLclRx uint64 = 0
 	var metadataVtepRx uint64 = METADATA_RX_VTEP
-	vlanFlood, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
+	localMacMiss, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
 		Priority:     FLOW_FLOOD_PRIORITY,
 		VlanId:       vlanId,
 		Metadata:     &metadataLclRx,
@@ -380,8 +387,11 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 		return err
 	}
 
-	vlanFlood.Next(vlan.allFlood)
-	vlanLclFlood, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
+	localMacMiss.Next(vlan.allFlood)
+	vlan.localMacMiss = localMacMiss
+
+	// Setup Mac miss flow for vtep traffic
+	vtepMacMiss, err := self.macDestTable.NewFlow(ofctrl.FlowMatch{
 		Priority:     FLOW_FLOOD_PRIORITY,
 		VlanId:       vlanId,
 		Metadata:     &metadataVtepRx,
@@ -391,7 +401,8 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32) error {
 		log.Errorf("Error creating local flood. Err: %v", err)
 		return err
 	}
-	vlanLclFlood.Next(vlan.localFlood)
+	vtepMacMiss.Next(vlan.localFlood)
+	vlan.vtepMacMiss = vtepMacMiss
 
 	// store it in DB
 	self.vlanDb[vlanId] = vlan
@@ -407,13 +418,24 @@ func (self *Vxlan) RemoveVlan(vlanId uint16, vni uint32) error {
 	}
 
 	// Make sure the flood lists are empty
-	if (vlan.allFlood.NumOutput() != 0) || (vlan.localFlood.NumOutput() != 0) {
+	if vlan.localFlood.NumOutput() != 0 {
 		log.Fatalf("VLAN flood list is not empty")
 	}
+
+	log.Infof("Deleting vxlan: %d, vlan: %d", vni, vlanId)
 
 	// Uninstall the flood lists
 	vlan.allFlood.Delete()
 	vlan.localFlood.Delete()
+
+	// Uninstall mac miss Entries
+	vlan.localMacMiss.Delete()
+	vlan.vtepMacMiss.Delete()
+
+	// uninstall vtep vlan mapping flows
+	for _, portVlanFlow := range vlan.vtepVlanFlowDb {
+		portVlanFlow.Delete()
+	}
 
 	// Remove it from DB
 	delete(self.vlanDb, vlanId)
