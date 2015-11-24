@@ -33,14 +33,20 @@ import (
 	"net"
 	"net/rpc"
 	"os/exec"
+	"strconv"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
 	api "github.com/osrg/gobgp/api"
+	bgpconf "github.com/osrg/gobgp/config"
 	"github.com/osrg/gobgp/packet"
+	bgpserver "github.com/osrg/gobgp/server"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	//"os"
+	//"os/signal"
+	//"syscall"
 )
 
 // OfnetAgent state
@@ -70,9 +76,11 @@ type OfnetAgent struct {
 	endpointDb      map[string]*OfnetEndpoint // all known endpoints
 	localEndpointDb map[uint32]*OfnetEndpoint // local port to endpoint map
 
-	modRibCh  chan *api.Path
-	advPathCh chan *api.Path
-	ovsDriver *ovsdbDriver.OvsDriver
+	modRibCh   chan *api.Path
+	advPathCh  chan *api.Path
+	bgpServer  *bgpserver.BgpServer
+	grpcServer *bgpserver.Server
+	ovsDriver  *ovsdbDriver.OvsDriver
 }
 
 // local End point information
@@ -143,6 +151,7 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16
 	case "vlrouter":
 		agent.datapath = NewVlrouter(agent, rpcServ)
 		agent.ovsDriver = ovsdbDriver.NewOvsDriver("contivVlanBridge")
+		agent.bgpServer, agent.grpcServer = CreateBgpServer()
 		go func() {
 			err := agent.Serve()
 			if err != nil {
@@ -592,6 +601,11 @@ func (self *OfnetAgent) Serve() error {
 
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
+	//Add bgp router id as well
+	bgpGlobalCfg := bgpconf.Global{GlobalConfig: bgpconf.GlobalConfig{RouterId: net.ParseIP(routerId), As: 65002}}
+	self.bgpServer.SetGlobalType(bgpGlobalCfg)
+
+	/* ABHI
 	peerIP := "50.1.1.2" // get from Config
 	fmt.Println("Creating BGP PEER ENDPOINT !!!!!!!!!!!")
 	epreg = &OfnetEndpoint{
@@ -615,7 +629,7 @@ func (self *OfnetAgent) Serve() error {
 		log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
 		return err
 	}
-
+	*/
 	self.advPathCh <- path
 
 	go self.monitorBest()
@@ -737,4 +751,148 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 		return err
 	}
 	return err
+}
+
+func CreateBgpServer() (*bgpserver.BgpServer, *bgpserver.Server) {
+	bgpServer := bgpserver.NewBgpServer(bgp.BGP_PORT)
+	go bgpServer.Serve()
+
+	// start grpc Server
+	grpcServer := bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
+	go grpcServer.Serve()
+
+	return bgpServer, grpcServer
+
+} /*
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM)
+
+	configCh := make(chan bgpconf.BgpConfigSet)
+	reloadCh := make(chan bool)
+	go bgpconf.ReadConfigfileServe(cfgFile, configCh, reloadCh)
+	reloadCh <- true
+	bgpServer := bgpserver.NewBgpServer(bgp.BGP_PORT)
+	go bgpServer.Serve()
+
+	// start grpc Server
+	grpcServer := bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
+	go grpcServer.Serve()
+
+	go func() {
+		err := self.Serve()
+		if err != nil {
+			log.Errorf("protocol server finished with err: %s", err)
+		}
+	}()
+
+	var bgpConfig *bgpconf.Bgp
+	var policyConfig *bgpconf.RoutingPolicy
+
+	for {
+		select {
+		case newConfig := <-configCh:
+
+			if bgpConfig == nil {
+				bgpServer.SetGlobalType(newConfig.Bgp.Global)
+				bgpServer.SetRpkiConfig(newConfig.Bgp.RpkiServers)
+				bgpServer.SetBmpConfig(newConfig.Bgp.BmpServers)
+			}
+
+			c, added, deleted, updated := bgpconf.UpdateConfig(bgpConfig, &newConfig.Bgp)
+			bgpConfig = c
+
+			for _, p := range added {
+				log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
+				bgpServer.PeerAdd(p)
+				epreg := &OfnetEndpoint{
+					EndpointID:   p.NeighborAddress.String(),
+					EndpointType: "external",
+					IpAddr:       p.NeighborAddress,
+					IpMask:       net.ParseIP("255.255.255.255"),
+					VrfId:        0, // FIXME set VRF correctly
+					MacAddrStr:   "88:1d:fc:cf:a7:fc",
+					Vlan:         1,
+					PortNo:       1,
+					Timestamp:    time.Now(),
+				}
+
+				// Install the endpoint in datapath
+				// First, add the endpoint to local routing table
+				self.endpointDb[epreg.EndpointID] = epreg
+				err := self.datapath.AddEndpoint(epreg)
+
+				if err != nil {
+					log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
+					return err
+				}
+			}
+			for _, p := range deleted {
+				log.Infof("Peer %v is deleted", p.NeighborConfig.NeighborAddress)
+				bgpServer.PeerDelete(p)
+			}
+			for _, p := range updated {
+				log.Infof("Peer %v is updated", p.NeighborConfig.NeighborAddress)
+				bgpServer.PeerUpdate(p)
+			}
+
+			if policyConfig == nil {
+				policyConfig = &newConfig.Policy
+				bgpServer.SetPolicy(newConfig.Policy)
+			} else {
+				if bgpconf.CheckPolicyDifference(policyConfig, &newConfig.Policy) {
+					log.Info("Policy config is updated")
+					bgpServer.UpdatePolicy(newConfig.Policy)
+				}
+			}
+		case sig := <-sigCh:
+			switch sig {
+			case syscall.SIGHUP:
+				log.Info("reload the config file")
+				reloadCh <- true
+			}
+		}
+	}
+	return nil
+
+}
+*/
+func (self *OfnetAgent) DeleteBgpNeighbors(As string, neighbors []string) error {
+	return nil
+}
+
+func (self *OfnetAgent) AddBgpNeighbors(As string, neighbors []string) error {
+
+	peerAs, _ := strconv.Atoi(As)
+	for _, peer := range neighbors {
+		p := bgpconf.Neighbor{
+			NeighborAddress: net.ParseIP(peer),
+			NeighborConfig: bgpconf.NeighborConfig{NeighborAddress: net.ParseIP(peer),
+				PeerAs: uint32(peerAs)},
+		}
+		log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
+		self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
+			BmpServerList: []bgpconf.BmpServer{},
+		})
+		self.bgpServer.PeerAdd(p)
+		epreg := &OfnetEndpoint{
+			EndpointID:   peer,
+			EndpointType: "external",
+			IpAddr:       net.ParseIP(peer),
+			IpMask:       net.ParseIP("255.255.255.255"),
+			VrfId:        0, // FIXME set VRF correctly
+			Vlan:         1,
+			Timestamp:    time.Now(),
+		}
+
+		// Install the endpoint in datapath
+		// First, add the endpoint to local routing table
+		self.endpointDb[epreg.EndpointID] = epreg
+		err := self.datapath.AddEndpoint(epreg)
+
+		if err != nil {
+			log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
+			return err
+		}
+	}
+	return nil
 }
