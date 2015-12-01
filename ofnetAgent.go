@@ -543,7 +543,7 @@ func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 }
 
 func (self *OfnetAgent) Serve() error {
-	time.Sleep(10 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	self.modRibCh = make(chan *api.Path, 16)
 	self.advPathCh = make(chan *api.Path, 16)
@@ -568,7 +568,10 @@ func (self *OfnetAgent) Serve() error {
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
-	self.ovsDriver.CreatePort("inb01", "internal", 1)
+	err = self.ovsDriver.CreatePort("inb01", "internal", 1)
+	if err != nil {
+		log.Errorf("Error creating the port", err)
+	}
 	//link, err := netlink.LinkByName("inb01")
 	//if err != nil {
 	//	return err
@@ -582,23 +585,25 @@ func (self *OfnetAgent) Serve() error {
 	cmd.Run()
 
 	intf, _ := net.InterfaceByName("inb01")
+	ofPortno, _ := self.ovsDriver.GetOfpPortNo("inb01")
 
 	fmt.Println("Creating BGP PEER ENDPOINT !!!!!!!!!!!")
 	epreg := &OfnetEndpoint{
 		EndpointID:   routerId,
-		EndpointType: "internal",
+		EndpointType: "internal-bgp",
 		IpAddr:       net.ParseIP(routerId),
 		IpMask:       net.ParseIP("255.255.255.255"),
 		VrfId:        0,                          // FIXME set VRF correctly
 		MacAddrStr:   intf.HardwareAddr.String(), //link.Attrs().HardwareAddr.String(),
 		Vlan:         1,
-		PortNo:       2,
+		PortNo:       ofPortno,
 		Timestamp:    time.Now(),
 	}
 	// Add the endpoint to local routing table
 	self.endpointDb[routerId] = epreg
 	self.localEndpointDb[epreg.PortNo] = epreg
 
+	fmt.Println(*epreg)
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
 	//Add bgp router id as well
@@ -753,16 +758,19 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 	return err
 }
 
-func CreateBgpServer() (*bgpserver.BgpServer, *bgpserver.Server) {
-	bgpServer := bgpserver.NewBgpServer(bgp.BGP_PORT)
+func CreateBgpServer() (bgpServer *bgpserver.BgpServer, grpcServer *bgpserver.Server) {
+	bgpServer = bgpserver.NewBgpServer(bgp.BGP_PORT)
+	if bgpServer == nil {
+		log.Errorf("Error creating bgp server")
+	}
 	go bgpServer.Serve()
-
 	// start grpc Server
-	grpcServer := bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
+	grpcServer = bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
+	if grpcServer == nil {
+		log.Errorf("Error creating bgp server")
+	}
 	go grpcServer.Serve()
-
-	return bgpServer, grpcServer
-
+	return
 } /*
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM)
@@ -848,6 +856,7 @@ func CreateBgpServer() (*bgpserver.BgpServer, *bgpserver.Server) {
 			switch sig {
 			case syscall.SIGHUP:
 				log.Info("reload the config file")
+
 				reloadCh <- true
 			}
 		}
@@ -873,7 +882,9 @@ func (self *OfnetAgent) AddBgpNeighbors(As string, neighbors []string) error {
 		self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
 			BmpServerList: []bgpconf.BmpServer{},
 		})
+		log.Infof("Peer %v is added   3 ", p.NeighborConfig.NeighborAddress)
 		self.bgpServer.PeerAdd(p)
+		log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
 		epreg := &OfnetEndpoint{
 			EndpointID:   peer,
 			EndpointType: "external",

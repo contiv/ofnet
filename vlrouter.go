@@ -36,9 +36,9 @@ import (
 	"github.com/contiv/ofnet/ofctrl"
 	api "github.com/osrg/gobgp/api"
 	"github.com/osrg/gobgp/packet"
+	//"github.com/osrg/gobgp/server"
 	"github.com/shaleman/libOpenflow/openflow13"
 	"github.com/shaleman/libOpenflow/protocol"
-	//"github.com/osrg/gobgp/server"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
@@ -63,6 +63,7 @@ type Vlrouter struct {
 
 	// Router Mac to be used
 	myRouterMac net.HardwareAddr
+	myRouterIP  net.IP
 }
 
 // Create a new vlrouter instance
@@ -189,6 +190,11 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	// Store the flow
 	self.flowDb[endpoint.IpAddr.String()] = ipFlow
 
+	if endpoint.EndpointType == "internal-bgp" {
+		return nil
+	}
+
+	log.Infof("ADDING TO BGP !!! LOCAL ROUTE")
 	//dial grpc server
 	conn, err := grpc.Dial("127.0.0.1:8080", grpc.WithBlock(), grpc.WithInsecure())
 	if err != nil {
@@ -202,9 +208,9 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
 	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
-	n, _ := bgp.NewPathAttributeNextHop("192.168.2.10").Serialize()
+	n, _ := bgp.NewPathAttributeNextHop("50.1.1.1").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 
 	name := ""
@@ -218,15 +224,18 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	client := api.NewGobgpApiClient(conn)
 	stream, err := client.ModPath(context.Background())
 	if err != nil {
+		log.Errorf("Fail to enforce Modpathi", err)
 		return err
 	}
 	err = stream.Send(arg)
 	if err != nil {
+		log.Errorf("Failed to send strean", err)
 		return err
 	}
 	stream.CloseSend()
 	res, e := stream.CloseAndRecv()
 	if e != nil {
+		log.Errorf("Falied toclose stream ")
 		return e
 	}
 	if res.Code != api.Error_SUCCESS {
@@ -451,7 +460,7 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 				//srcMac, _ = net.ParseMAC(endpoint.MacAddrStr)
 				//return
 			} else {
-				if endpoint.EndpointType == "internal" {
+				if endpoint.EndpointType == "internal" || endpoint.EndpointType == "internal-bgp" {
 					//srcMac, _ = net.ParseMAC(endpoint.MacAddrStr)
 					intf, _ = net.InterfaceByName("eth7")
 					srcMac = intf.HardwareAddr
