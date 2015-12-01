@@ -208,7 +208,7 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
 	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 	n, _ := bgp.NewPathAttributeNextHop("50.1.1.1").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
@@ -220,13 +220,17 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		Name:     name,
 		Paths:    []*api.Path{path},
 	}
+
 	//send arguement stream
 	client := api.NewGobgpApiClient(conn)
+	log.Infof("The NewGobgpApiClient is ", client)
 	stream, err := client.ModPath(context.Background())
+	log.Infof("The stream is ", stream)
 	if err != nil {
 		log.Errorf("Fail to enforce Modpathi", err)
 		return err
 	}
+	log.Infof("Sending msg")
 	err = stream.Send(arg)
 	if err != nil {
 		log.Errorf("Failed to send strean", err)

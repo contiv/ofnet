@@ -565,7 +565,7 @@ func (self *OfnetAgent) Serve() error {
 	path.Nlri, _ = bgp.NewIPAddrPrefix(uint8(32), routerId).Serialize()
 	n, _ := bgp.NewPathAttributeNextHop("0.0.0.0").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
 	err = self.ovsDriver.CreatePort("inb01", "internal", 1)
