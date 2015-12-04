@@ -129,7 +129,7 @@ func (self *Vxlan) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
 
 // Add a local endpoint and install associated local route
 func (self *Vxlan) AddLocalEndpoint(endpoint OfnetEndpoint) error {
-	log.Infof("Adding local endpoint: %+v", endpoint)
+	log.Infof("Adding localEndpoint: %+v", endpoint)
 
 	vni := self.agent.vlanVniMap[endpoint.Vlan]
 	if vni == nil {
@@ -278,6 +278,9 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		// Point to next table
 		// Note that we bypass policy lookup on dest host.
 		portVlanFlow.Next(self.macDestTable)
+
+		// save the port vlan flow for cleaning up later
+		self.vlanDb[*vlan].vtepVlanFlowDb[portNo] = portVlanFlow
 	}
 
 	// Walk all vlans and add vtep port to the vlan
