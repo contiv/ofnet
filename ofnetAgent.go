@@ -57,10 +57,11 @@ type OfnetAgent struct {
 	MyPort      uint16             // Port where the agent's RPC server is listening
 	MyAddr      string             // RPC server addr. same as localIp. different in testing environments
 	isConnected bool               // Is the switch connected
-
+	routerIP    string
 	rpcServ     *rpc.Server   // jsonrpc server
 	rpcListener net.Listener  // Listener
 	datapath    OfnetDatapath // Configured datapath
+	vlanIntf    string        // uplink port name
 
 	masterDb map[string]*OfnetNode // list of Masters
 
@@ -105,13 +106,22 @@ const IP_TBL_ID = 4
 const MAC_DEST_TBL_ID = 5
 
 // Create a new Ofnet agent and initialize it
-func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16) (*OfnetAgent, error) {
+func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16, routerInfo ...string) (*OfnetAgent, error) {
 	agent := new(OfnetAgent)
 
 	// Init params
 	agent.localIp = localIp
 	agent.MyPort = rpcPort
 	agent.MyAddr = localIp.String()
+	if len(routerInfo) > 0 {
+		//Ensuring routerInfo is ip
+		if ok := net.ParseIP(routerInfo[0]); ok != nil {
+			agent.routerIP = routerInfo[0]
+		}
+		agent.vlanIntf = routerInfo[1]
+	}
+
+	log.Infof("ADDING OFNET AGENT LOCALIP IS ", agent.MyAddr)
 
 	agent.masterDb = make(map[string]*OfnetNode)
 	agent.portVlanMap = make(map[uint32]*uint16)
@@ -331,6 +341,7 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 		EndpointType:  "internal",
 		EndpointGroup: endpoint.EndpointGroup,
 		IpAddr:        endpoint.IpAddr,
+		IpMask:        net.ParseIP("255.255.255.255"),
 		VrfId:         endpoint.Vlan, //This has to be changed to vrfId when there is multi network per vrf support
 		MacAddrStr:    endpoint.MacAddr.String(),
 		Vlan:          endpoint.Vlan,
@@ -441,17 +452,29 @@ func (self *OfnetAgent) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 
 // Add a vlan.
 // This is mainly used for mapping vlan id to Vxlan VNI
-func (self *OfnetAgent) AddVlan(vlanId uint16, vni uint32) error {
+func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string) error {
 	// store it in DB
 	self.vlanVniMap[vlanId] = &vni
 	self.vniVlanMap[vni] = &vlanId
 
 	// Call the datapath
+	epreg := &OfnetEndpoint{
+		EndpointID:   Gw,
+		EndpointType: "internal",
+		IpAddr:       net.ParseIP(Gw),
+		IpMask:       net.ParseIP("255.255.255.255"),
+		VrfId:        0, // FIXME set VRF correctly
+		Vlan:         1,
+		PortNo:       0,
+		Timestamp:    time.Now(),
+	}
+	self.endpointDb[Gw] = epreg
 	return self.datapath.AddVlan(vlanId, vni)
+
 }
 
 // Remove a vlan from datapath
-func (self *OfnetAgent) RemoveVlan(vlanId uint16, vni uint32) error {
+func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string) error {
 	// Clear the database
 	delete(self.vlanVniMap, vlanId)
 	delete(self.vniVlanMap, vni)
@@ -462,6 +485,7 @@ func (self *OfnetAgent) RemoveVlan(vlanId uint16, vni uint32) error {
 			log.Fatalf("Vlan %d still has routes. Route: %+v", vlanId, endpoint)
 		}
 	}
+	delete(self.endpointDb, Gw)
 
 	// Call the datapath
 	return self.datapath.RemoveVlan(vlanId, vni)
@@ -543,7 +567,7 @@ func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 }
 
 func (self *OfnetAgent) Serve() error {
-	time.Sleep(60 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	self.modRibCh = make(chan *api.Path, 16)
 	self.advPathCh = make(chan *api.Path, 16)
@@ -561,7 +585,7 @@ func (self *OfnetAgent) Serve() error {
 		Pattrs: make([][]byte, 0),
 	}
 
-	routerId := "50.1.1.1" //d.config.Bgp.Global.GlobalConfig.RouterId.String()
+	routerId := self.routerIP //d.config.Bgp.Global.GlobalConfig.RouterId.String()
 	path.Nlri, _ = bgp.NewIPAddrPrefix(uint8(32), routerId).Serialize()
 	n, _ := bgp.NewPathAttributeNextHop("0.0.0.0").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
@@ -572,14 +596,8 @@ func (self *OfnetAgent) Serve() error {
 	if err != nil {
 		log.Errorf("Error creating the port", err)
 	}
-	//link, err := netlink.LinkByName("inb01")
-	//if err != nil {
-	//	return err
-	//}
-	//addr, err := netlink.ParseAddr("50.1.1.1")
-	//err = netlink.AddrAdd(link, addr)
 
-	cmd := exec.Command("ifconfig", "inb01", "50.1.1.1")
+	cmd := exec.Command("ifconfig", "inb01", routerId)
 	cmd.Run()
 	cmd = exec.Command("ifconfig", "inb01", "netmask", "255.255.255.0")
 	cmd.Run()
@@ -607,37 +625,17 @@ func (self *OfnetAgent) Serve() error {
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
 	//Add bgp router id as well
-	bgpGlobalCfg := bgpconf.Global{GlobalConfig: bgpconf.GlobalConfig{RouterId: net.ParseIP(routerId), As: 65002}}
+	bgpGlobalCfg := bgpconf.Global{}
+	SetDefaultGlobalConfigValues(&bgpGlobalCfg)
+	//bgpGlobalCfg = bgpconf.Global{GlobalConfig: bgpconf.GlobalConfig{RouterId: net.ParseIP(routerId), As: 65002}}
+	bgpGlobalCfg.GlobalConfig.RouterId = net.ParseIP(routerId)
+	bgpGlobalCfg.GlobalConfig.As = 65002
 	self.bgpServer.SetGlobalType(bgpGlobalCfg)
 
-	/* ABHI
-	peerIP := "50.1.1.2" // get from Config
-	fmt.Println("Creating BGP PEER ENDPOINT !!!!!!!!!!!")
-	epreg = &OfnetEndpoint{
-		EndpointID:   peerIP,
-		EndpointType: "external",
-		IpAddr:       net.ParseIP(peerIP),
-		IpMask:       net.ParseIP("255.255.255.255"),
-		VrfId:        0, // FIXME set VRF correctly
-		MacAddrStr:   "88:1d:fc:cf:a7:fc",
-		Vlan:         1,
-		PortNo:       1,
-		Timestamp:    time.Now(),
-	}
-
-	// Install the endpoint in datapath
-	// First, add the endpoint to local routing table
-	self.endpointDb[epreg.EndpointID] = epreg
-	err = self.datapath.AddEndpoint(epreg)
-
-	if err != nil {
-		log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
-		return err
-	}
-	*/
 	self.advPathCh <- path
 
 	go self.monitorBest()
+	go self.monitorPeer()
 
 	for {
 		select {
@@ -731,31 +729,46 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 	fmt.Println(endpointIPNet)
 	fmt.Println("HERE is the Nexthop IP ")
 	fmt.Println(nexthop)
+
+	//check if bgp published a route local to the host
+
+	epid := endpointIPNet.IP.Mask(endpointIPNet.Mask).String()
+	//Check if the route is local
+
+	if nexthop == self.routerIP {
+		log.Info("This is a local route skipping endpoint create! ")
+		return nil
+	}
+
 	ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
 	fmt.Println(ipmask)
 
-	epreg := &OfnetEndpoint{
-		EndpointID:   endpointIPNet.IP.Mask(endpointIPNet.Mask).String(),
-		EndpointType: "external",
-		IpAddr:       endpointIPNet.IP,
-		IpMask:       ipmask,
-		VrfId:        0, // FIXME set VRF correctly
-		MacAddrStr:   self.endpointDb[nexthop].MacAddrStr,
-		Vlan:         1,
-		OriginatorIp: self.localIp,
-		PortNo:       self.endpointDb[nexthop].PortNo,
-		Timestamp:    time.Now(),
-	}
+	if path.IsWithdraw != true {
+		epreg := &OfnetEndpoint{
+			EndpointID:   epid,
+			EndpointType: "external",
+			IpAddr:       endpointIPNet.IP,
+			IpMask:       ipmask,
+			VrfId:        0, // FIXME set VRF correctly
+			MacAddrStr:   self.endpointDb[nexthop].MacAddrStr,
+			Vlan:         1,
+			OriginatorIp: self.localIp,
+			PortNo:       self.endpointDb[nexthop].PortNo,
+			Timestamp:    time.Now(),
+		}
 
-	// Install the endpoint in datapath
-	// First, add the endpoint to local routing table
-	self.endpointDb[epreg.EndpointID] = epreg
-	err := self.datapath.AddEndpoint(epreg)
-	if err != nil {
-		log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
-		return err
+		// Install the endpoint in datapath
+		// First, add the endpoint to local routing table
+		self.endpointDb[epreg.EndpointID] = epreg
+		err := self.datapath.AddEndpoint(epreg)
+		if err != nil {
+			log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
+			return err
+		}
+	} else {
+		log.Info("Received route withdraw from BGP for ", endpointIPNet)
 	}
-	return err
+	return nil
 }
 
 func CreateBgpServer() (bgpServer *bgpserver.BgpServer, grpcServer *bgpserver.Server) {
@@ -771,123 +784,111 @@ func CreateBgpServer() (bgpServer *bgpserver.BgpServer, grpcServer *bgpserver.Se
 	}
 	go grpcServer.Serve()
 	return
-} /*
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM)
+}
 
-	configCh := make(chan bgpconf.BgpConfigSet)
-	reloadCh := make(chan bool)
-	go bgpconf.ReadConfigfileServe(cfgFile, configCh, reloadCh)
-	reloadCh <- true
-	bgpServer := bgpserver.NewBgpServer(bgp.BGP_PORT)
-	go bgpServer.Serve()
+func (self *OfnetAgent) DeleteBgpNeighbors() error {
 
-	// start grpc Server
-	grpcServer := bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
-	go grpcServer.Serve()
+	//As a part of delete bgp neighbors
+	//Search for BGP peer.
+	//Delete the peer from bgp , delete endpoint info for peer
+	//Finally delete all routes learnt on the uplink port.
+	uplink, _ := self.ovsDriver.GetOfpPortNo(self.vlanIntf)
 
-	go func() {
-		err := self.Serve()
-		if err != nil {
-			log.Errorf("protocol server finished with err: %s", err)
-		}
-	}()
+	for _, endpoint := range self.endpointDb {
+		if endpoint.PortNo == uplink {
+			self.datapath.RemoveEndpoint(endpoint)
+			if endpoint.EndpointType == "internal" {
+				endpoint.PortNo = 0
+				self.endpointDb[endpoint.EndpointID] = endpoint
+				//We readd unresolved endpoints that were learnt via
+				//etcd
+				self.datapath.AddEndpoint(endpoint)
+			} else if endpoint.EndpointType == "external" {
+				delete(self.endpointDb, endpoint.EndpointID)
+			} else if endpoint.EndpointType == "external-bgp" {
 
-	var bgpConfig *bgpconf.Bgp
-	var policyConfig *bgpconf.RoutingPolicy
-
-	for {
-		select {
-		case newConfig := <-configCh:
-
-			if bgpConfig == nil {
-				bgpServer.SetGlobalType(newConfig.Bgp.Global)
-				bgpServer.SetRpkiConfig(newConfig.Bgp.RpkiServers)
-				bgpServer.SetBmpConfig(newConfig.Bgp.BmpServers)
-			}
-
-			c, added, deleted, updated := bgpconf.UpdateConfig(bgpConfig, &newConfig.Bgp)
-			bgpConfig = c
-
-			for _, p := range added {
-				log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
-				bgpServer.PeerAdd(p)
-				epreg := &OfnetEndpoint{
-					EndpointID:   p.NeighborAddress.String(),
-					EndpointType: "external",
-					IpAddr:       p.NeighborAddress,
-					IpMask:       net.ParseIP("255.255.255.255"),
-					VrfId:        0, // FIXME set VRF correctly
-					MacAddrStr:   "88:1d:fc:cf:a7:fc",
-					Vlan:         1,
-					PortNo:       1,
-					Timestamp:    time.Now(),
-				}
-
-				// Install the endpoint in datapath
-				// First, add the endpoint to local routing table
-				self.endpointDb[epreg.EndpointID] = epreg
-				err := self.datapath.AddEndpoint(epreg)
-
+				timeout := grpc.WithTimeout(time.Second)
+				conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
 				if err != nil {
-					log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
+					log.Fatal(err)
+				}
+				defer conn.Close()
+				client := api.NewGobgpApiClient(conn)
+				if client == nil {
+
+				}
+				arg := &api.Arguments{Name: endpoint.EndpointID}
+
+				peer, err := client.GetNeighbor(context.Background(), arg)
+				if err != nil {
+					fmt.Println(err)
 					return err
 				}
-			}
-			for _, p := range deleted {
-				log.Infof("Peer %v is deleted", p.NeighborConfig.NeighborAddress)
-				bgpServer.PeerDelete(p)
-			}
-			for _, p := range updated {
-				log.Infof("Peer %v is updated", p.NeighborConfig.NeighborAddress)
-				bgpServer.PeerUpdate(p)
-			}
-
-			if policyConfig == nil {
-				policyConfig = &newConfig.Policy
-				bgpServer.SetPolicy(newConfig.Policy)
-			} else {
-				if bgpconf.CheckPolicyDifference(policyConfig, &newConfig.Policy) {
-					log.Info("Policy config is updated")
-					bgpServer.UpdatePolicy(newConfig.Policy)
-				}
-			}
-		case sig := <-sigCh:
-			switch sig {
-			case syscall.SIGHUP:
-				log.Info("reload the config file")
-
-				reloadCh <- true
+				log.Infof("Deleteing Bgp peer from Bgp server")
+				p := bgpconf.Neighbor{}
+				SetNeighborConfigValues(&p)
+				//	p = bgpconf.Neighbor{
+				//		NeighborAddress: net.ParseIP(peer),
+				//		NeighborConfig: bgpconf.NeighborConfig{NeighborAddress: net.ParseIP(peer),
+				//			PeerAs: uint32(peerAs)},
+				//	}
+				p.NeighborAddress = net.ParseIP(peer.Conf.NeighborAddress)
+				p.NeighborConfig.NeighborAddress = net.ParseIP(peer.Conf.NeighborAddress)
+				p.NeighborConfig.PeerAs = uint32(peer.Conf.PeerAs)
+				//FIX ME set ipv6 depending on peerip (for v6 BGP)
+				p.AfiSafis.AfiSafiList = []bgpconf.AfiSafi{
+					bgpconf.AfiSafi{AfiSafiName: "ipv4-unicast"}}
+				self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
+					BmpServerList: []bgpconf.BmpServer{},
+				})
+				self.bgpServer.PeerDelete(p)
 			}
 		}
 	}
 	return nil
 
 }
-*/
-func (self *OfnetAgent) DeleteBgpNeighbors(As string, neighbors []string) error {
-	return nil
-}
 
 func (self *OfnetAgent) AddBgpNeighbors(As string, neighbors []string) error {
 
+	var policyConfig bgpconf.RoutingPolicy
+	//policyConfig = bgpconf.Plicy{}
 	peerAs, _ := strconv.Atoi(As)
 	for _, peer := range neighbors {
-		p := bgpconf.Neighbor{
-			NeighborAddress: net.ParseIP(peer),
-			NeighborConfig: bgpconf.NeighborConfig{NeighborAddress: net.ParseIP(peer),
-				PeerAs: uint32(peerAs)},
-		}
+		p := bgpconf.Neighbor{}
+		SetNeighborConfigValues(&p)
+		//	p = bgpconf.Neighbor{
+		//		NeighborAddress: net.ParseIP(peer),
+		//		NeighborConfig: bgpconf.NeighborConfig{NeighborAddress: net.ParseIP(peer),
+		//			PeerAs: uint32(peerAs)},
+		//	}
+		p.NeighborAddress = net.ParseIP(peer)
+		p.NeighborConfig.NeighborAddress = net.ParseIP(peer)
+		p.NeighborConfig.PeerAs = uint32(peerAs)
+
+		//FIX ME set ipv6 depending on peerip (for v6 BGP)
+		p.AfiSafis.AfiSafiList = []bgpconf.AfiSafi{
+			bgpconf.AfiSafi{AfiSafiName: "ipv4-unicast"}}
 		log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
 		self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
 			BmpServerList: []bgpconf.BmpServer{},
 		})
 		log.Infof("Peer %v is added   3 ", p.NeighborConfig.NeighborAddress)
 		self.bgpServer.PeerAdd(p)
+		//	if policyConfig == nil {
+		//policyConfig = &newConfig.Policy
+		self.bgpServer.SetPolicy(policyConfig)
+		//	} else {
+		//if bgpconf.CheckPolicyDifference(policyConfig, &newConfig.Policy) {
+		//	log.Info("Policy config is updated")
+		//	bgpServer.UpdatePolicy(newConfig.Policy)
+		//}
+		//	}
+
 		log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
 		epreg := &OfnetEndpoint{
 			EndpointID:   peer,
-			EndpointType: "external",
+			EndpointType: "external-bgp",
 			IpAddr:       net.ParseIP(peer),
 			IpMask:       net.ParseIP("255.255.255.255"),
 			VrfId:        0, // FIXME set VRF correctly
@@ -904,6 +905,95 @@ func (self *OfnetAgent) AddBgpNeighbors(As string, neighbors []string) error {
 			log.Errorf("ABHI : OFNETAGENT Error adding endpoint: {%+v}. Err: %v", epreg, err)
 			return err
 		}
+
+	}
+	return nil
+}
+
+func SetDefaultGlobalConfigValues(bt *bgpconf.Global) error {
+
+	bt.AfiSafis.AfiSafiList = []bgpconf.AfiSafi{
+		bgpconf.AfiSafi{AfiSafiName: "ipv4-unicast"},
+		bgpconf.AfiSafi{AfiSafiName: "ipv6-unicast"},
+		bgpconf.AfiSafi{AfiSafiName: "l3vpn-ipv4-unicast"},
+		bgpconf.AfiSafi{AfiSafiName: "l3vpn-ipv6-unicast"},
+		bgpconf.AfiSafi{AfiSafiName: "l2vpn-evpn"},
+		bgpconf.AfiSafi{AfiSafiName: "encap"},
+		bgpconf.AfiSafi{AfiSafiName: "rtc"},
+		bgpconf.AfiSafi{AfiSafiName: "ipv4-flowspec"},
+		bgpconf.AfiSafi{AfiSafiName: "l3vpn-ipv4-flowspec"},
+		bgpconf.AfiSafi{AfiSafiName: "ipv6-flowspec"},
+		bgpconf.AfiSafi{AfiSafiName: "l3vpn-ipv6-flowspec"},
+	}
+	bt.MplsLabelRange.MinLabel = bgpconf.DEFAULT_MPLS_LABEL_MIN
+	bt.MplsLabelRange.MaxLabel = bgpconf.DEFAULT_MPLS_LABEL_MAX
+
+	return nil
+}
+
+func SetNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
+
+	timerConfig := neighbor.Timers.TimersConfig
+	timerConfig.HoldTime = float64(bgpconf.DEFAULT_CONNECT_RETRY)
+	timerConfig.HoldTime = float64(bgpconf.DEFAULT_HOLDTIME)
+	timerConfig.KeepaliveInterval = timerConfig.HoldTime / 3
+	timerConfig.IdleHoldTimeAfterReset = float64(bgpconf.DEFAULT_IDLE_HOLDTIME_AFTER_RESET)
+	//FIX ME need to check with global peer to set internal or external
+	neighbor.NeighborConfig.PeerType = bgpconf.PEER_TYPE_INTERNAL
+
+	return nil
+}
+
+func (self *OfnetAgent) monitorPeer() error {
+
+	var oldAdminState, oldState string
+
+	timeout := grpc.WithTimeout(time.Second)
+	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	client := api.NewGobgpApiClient(conn)
+	if client == nil {
+
+	}
+	arg := &api.Arguments{}
+
+	stream, err := client.MonitorPeerState(context.Background(), arg)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	for {
+		s, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			fmt.Println(err)
+			break
+		}
+		fmt.Printf("[NEIGH] %s fsm: %s admin: %s\n", s.Conf.NeighborAddress, s.Info.BgpState, s.Info.AdminState)
+		if oldState == "BGP_FSM_ESTABLISHED" && oldAdminState == "ADMIN_STATE_UP" {
+			uplink, _ := self.ovsDriver.GetOfpPortNo(self.vlanIntf)
+			//walk all external endpoints in the endpointDB and remove the resolution
+			for _, endpoint := range self.endpointDb {
+				if endpoint.PortNo == uplink {
+					self.datapath.RemoveEndpoint(endpoint)
+					if endpoint.EndpointType == "internal" {
+						endpoint.PortNo = 0
+						self.endpointDb[endpoint.EndpointID] = endpoint
+						//We readd unresolved endpoints that were learnt via
+						//etcd
+						self.datapath.AddEndpoint(endpoint)
+					} else if endpoint.EndpointType == "external" {
+						delete(self.endpointDb, endpoint.EndpointID)
+					}
+				}
+			}
+		}
+		oldState = s.Info.BgpState
+		oldAdminState = s.Info.AdminState
 	}
 	return nil
 }
