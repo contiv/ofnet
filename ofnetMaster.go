@@ -105,16 +105,16 @@ func (self *OfnetMaster) RegisterNode(hostInfo *OfnetNode, ret *bool) error {
 
 	// Send all existing policy rules to the new node
 	for _, rule := range self.policyDb {
-			var resp bool
+		var resp bool
 
-			log.Infof("Sending rule: %+v to node %s:%d", rule, node.HostAddr, node.HostPort)
+		log.Infof("Sending rule: %+v to node %s:%d", rule, node.HostAddr, node.HostPort)
 
-			client := rpcHub.Client(node.HostAddr, node.HostPort)
-			err := client.Call("PolicyAgent.AddRule", rule, &resp)
-			if err != nil {
-				log.Errorf("Error adding rule to %s. Err: %v", node.HostAddr, err)
-				return err
-			}
+		client := rpcHub.Client(node.HostAddr, node.HostPort)
+		err := client.Call("PolicyAgent.AddRule", rule, &resp)
+		if err != nil {
+			log.Errorf("Error adding rule to %s. Err: %v", node.HostAddr, err)
+			return err
+		}
 	}
 
 	return nil
@@ -122,6 +122,8 @@ func (self *OfnetMaster) RegisterNode(hostInfo *OfnetNode, ret *bool) error {
 
 // Add an Endpoint
 func (self *OfnetMaster) EndpointAdd(ep *OfnetEndpoint, ret *bool) error {
+
+	log.Infof("Received Endpoint CReate from Remote netplugin")
 	// Check if we have the endpoint already and which is more recent
 	oldEp := self.endpointDb[ep.EndpointID]
 	if oldEp != nil {
@@ -136,6 +138,7 @@ func (self *OfnetMaster) EndpointAdd(ep *OfnetEndpoint, ret *bool) error {
 
 	// Publish it to all agents except where it came from
 	for _, node := range self.agentDb {
+		log.Infof("For loop")
 		if node.HostAddr != ep.OriginatorIp.String() {
 			var resp bool
 
