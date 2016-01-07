@@ -57,11 +57,11 @@ type OfnetAgent struct {
 	MyPort      uint16             // Port where the agent's RPC server is listening
 	MyAddr      string             // RPC server addr. same as localIp. different in testing environments
 	isConnected bool               // Is the switch connected
-	routerIP    string
-	rpcServ     *rpc.Server   // jsonrpc server
-	rpcListener net.Listener  // Listener
-	datapath    OfnetDatapath // Configured datapath
-	vlanIntf    string        // uplink port name
+	routerIP    string             // virtual interface ip for bgp
+	rpcServ     *rpc.Server        // jsonrpc server
+	rpcListener net.Listener       // Listener
+	datapath    OfnetDatapath      // Configured datapath
+	vlanIntf    string             // uplink port name
 
 	masterDb map[string]*OfnetNode // list of Masters
 
@@ -567,7 +567,7 @@ func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 }
 
 func (self *OfnetAgent) Serve() error {
-	time.Sleep(30 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	self.modRibCh = make(chan *api.Path, 16)
 	self.advPathCh = make(chan *api.Path, 16)
@@ -597,9 +597,7 @@ func (self *OfnetAgent) Serve() error {
 		log.Errorf("Error creating the port", err)
 	}
 
-	cmd := exec.Command("ifconfig", "inb01", routerId)
-	cmd.Run()
-	cmd = exec.Command("ifconfig", "inb01", "netmask", "255.255.255.0")
+	cmd := exec.Command("ifconfig", "inb01", routerId+"/24")
 	cmd.Run()
 
 	intf, _ := net.InterfaceByName("inb01")
@@ -690,7 +688,9 @@ func (self *OfnetAgent) monitorBest() error {
 
 func (self *OfnetAgent) modRib(path *api.Path) error {
 	var nlri bgp.AddrPrefixInterface
-	var nexthop string
+	var nextHop string
+	var macAddrStr string
+	var portNo uint32
 
 	if len(path.Nlri) > 0 {
 		nlri = &bgp.IPAddrPrefix{}
@@ -712,11 +712,11 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 		}
 
 		if p.GetType() == bgp.BGP_ATTR_TYPE_NEXT_HOP {
-			nexthop = p.(*bgp.PathAttributeNextHop).Value.String()
+			nextHop = p.(*bgp.PathAttributeNextHop).Value.String()
 			break
 		}
 	}
-	if nexthop == "0.0.0.0" {
+	if nextHop == "0.0.0.0" {
 		return nil
 	}
 
@@ -728,16 +728,23 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 	fmt.Println("HERE is the ENDPOINT IP ")
 	fmt.Println(endpointIPNet)
 	fmt.Println("HERE is the Nexthop IP ")
-	fmt.Println(nexthop)
+	fmt.Println(nextHop)
 
 	//check if bgp published a route local to the host
-
 	epid := endpointIPNet.IP.Mask(endpointIPNet.Mask).String()
 	//Check if the route is local
 
-	if nexthop == self.routerIP {
+	if nextHop == self.routerIP {
 		log.Info("This is a local route skipping endpoint create! ")
 		return nil
+	}
+	if self.endpointDb[nextHop] == nil {
+		//the nexthop is not the directly connected eBgp peer
+		macAddrStr = ""
+		portNo = 0
+	} else {
+		macAddrStr = self.endpointDb[nextHop].MacAddrStr
+		portNo = self.endpointDb[nextHop].PortNo
 	}
 
 	ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
@@ -750,10 +757,10 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 			IpAddr:       endpointIPNet.IP,
 			IpMask:       ipmask,
 			VrfId:        0, // FIXME set VRF correctly
-			MacAddrStr:   self.endpointDb[nexthop].MacAddrStr,
+			MacAddrStr:   macAddrStr,
 			Vlan:         1,
 			OriginatorIp: self.localIp,
-			PortNo:       self.endpointDb[nexthop].PortNo,
+			PortNo:       portNo,
 			Timestamp:    time.Now(),
 		}
 
@@ -984,10 +991,17 @@ func (self *OfnetAgent) monitorPeer() error {
 						endpoint.PortNo = 0
 						self.endpointDb[endpoint.EndpointID] = endpoint
 						//We readd unresolved endpoints that were learnt via
-						//etcd
+						//json rpc
 						self.datapath.AddEndpoint(endpoint)
 					} else if endpoint.EndpointType == "external" {
 						delete(self.endpointDb, endpoint.EndpointID)
+					} else if endpoint.EndpointType == "external-bgp" {
+						// bgp peer endpoint
+						endpoint.PortNo = 0
+						self.endpointDb[endpoint.EndpointID] = endpoint
+						//We readd unresolved endpoints that were learnt via
+						//json rpc
+						self.datapath.AddEndpoint(endpoint)
 					}
 				}
 			}

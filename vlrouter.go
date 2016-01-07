@@ -210,8 +210,11 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
 	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
+	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
+	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
+	path.Pattrs = append(path.Pattrs, aspath)
 	n, _ := bgp.NewPathAttributeNextHop(self.agent.routerIP).Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 
@@ -289,8 +292,11 @@ func (self *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
 	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP).Serialize()
+	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
+	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
+	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
+	path.Pattrs = append(path.Pattrs, aspath)
 	n, _ := bgp.NewPathAttributeNextHop(self.agent.routerIP).Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 	path.IsWithdraw = true
@@ -541,7 +547,18 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 					intf, _ = net.InterfaceByName(self.agent.vlanIntf)
 					srcMac = intf.HardwareAddr
 				} else if endpoint.EndpointType == "external" || endpoint.EndpointType == "external-bgp" {
-					srcMac = self.myRouterMac
+					endpoint = self.agent.getEndpointByIp(arpHdr.IPSrc)
+					if endpoint != nil {
+						if endpoint.EndpointType == "internal" || endpoint.EndpointType == "internal-bgp" {
+							srcMac = self.myRouterMac
+						} else {
+							return
+						}
+
+					} else {
+						return
+					}
+
 				}
 			}
 
