@@ -139,6 +139,10 @@ func (self *Vlrouter) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
 // Add a local endpoint and install associated local route
 func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	// Install a flow entry for vlan mapping and point it to IP table
+	if self.agent.ctrler == nil {
+		return nil
+	}
+
 	portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
 		Priority:  FLOW_MATCH_PRIORITY,
 		InputPort: endpoint.PortNo,
@@ -207,7 +211,7 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
 	}
-
+	log.Infof("THE ROUTER IP IS ", self.agent.routerIP)
 	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
 	path.Nlri, _ = nlri.Serialize()
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
@@ -228,14 +232,17 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	//send arguement stream
 	client := api.NewGobgpApiClient(conn)
-	log.Infof("The NewGobgpApiClient is ", client)
+	if client == nil {
+		log.Errorf("Gobgpapi stream invalid")
+		return nil
+	}
+
 	stream, err := client.ModPath(context.Background())
-	log.Infof("The stream is ", stream)
 	if err != nil {
 		log.Errorf("Fail to enforce Modpathi", err)
 		return err
 	}
-	log.Infof("Sending msg")
+
 	err = stream.Send(arg)
 	if err != nil {
 		log.Errorf("Failed to send strean", err)
@@ -250,6 +257,8 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	if res.Code != api.Error_SUCCESS {
 		return fmt.Errorf("error: code: %d, msg: %s", res.Code, res.Msg)
 	}
+	log.Infof("PRINTING THE RIB")
+	self.agent.ShowRib()
 
 	return nil
 }
@@ -310,14 +319,17 @@ func (self *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	//send arguement stream
 	client := api.NewGobgpApiClient(conn)
-	log.Infof("The NewGobgpApiClient is ", client)
+	if client == nil {
+		log.Errorf("Gobgpapi stream invalid")
+		return nil
+	}
+
 	stream, err := client.ModPath(context.Background())
 	log.Infof("The stream is ", stream)
 	if err != nil {
 		log.Errorf("Fail to enforce Modpathi", err)
 		return err
 	}
-	log.Infof("Sending msg")
 	err = stream.Send(arg)
 	if err != nil {
 		log.Errorf("Failed to send strean", err)

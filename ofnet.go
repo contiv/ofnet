@@ -65,7 +65,8 @@ type OfnetDatapath interface {
 
 // Default port numbers
 const OFNET_MASTER_PORT = 9001
-const OFNET_AGENT_PORT = 9002
+const OFNET_AGENT_VXLAN_PORT = 9002
+const OFNET_AGENT_VLAN_PORT = 9010
 
 // Information about each node
 type OfnetNode struct {
