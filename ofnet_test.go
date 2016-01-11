@@ -195,13 +195,22 @@ func TestMain(m *testing.M) {
 	brName := "ovsbr3"
 	ovsPort = uint16(9561)
 	ovsDrivers[2*NUM_AGENT] = ovsdbDriver.NewOvsDriver(brName)
-	err = ovsDrivers[0].AddController("127.0.0.1", ovsPort)
+	err = ovsDrivers[2*NUM_AGENT].AddController("127.0.0.1", ovsPort)
 	if err != nil {
 		log.Fatalf("Error adding controller to ovs: %s", brName)
 	}
 
 	// Wait for 10sec for switch to connect to controller
 	time.Sleep(30 * time.Second)
+
+	err = SetupVlans()
+	if err != nil {
+		log.Fatalf("Error setting up Vlans")
+	}
+	err = SetupVteps()
+	if err != nil {
+		log.Fatalf("Error setting up vteps")
+	}
 
 	// run the test
 	exitCode := m.Run()
@@ -210,7 +219,7 @@ func TestMain(m *testing.M) {
 }
 
 // test adding vlan
-func TestOfnetSetupVlan(t *testing.T) {
+func SetupVlans() error {
 	for i := 0; i < NUM_AGENT; i++ {
 		log.Info("Infex %d \n", i)
 		for j := 1; j < 5; j++ {
@@ -218,40 +227,47 @@ func TestOfnetSetupVlan(t *testing.T) {
 			//log.Infof("Adding Vlan %d on %s", j, localIpList[i])
 			err := vrtrAgents[i].AddNetwork(uint16(j), uint32(j), "")
 			if err != nil {
-				t.Errorf("Error adding vlan %d. Err: %v", j, err)
+				log.Errorf("Error adding vlan %d. Err: %v", j, err)
+				return err
 			}
 			err = vxlanAgents[i].AddNetwork(uint16(j), uint32(j), "")
 			if err != nil {
-				t.Errorf("Error adding vlan %d. Err: %v", j, err)
+				log.Errorf("Error adding vlan %d. Err: %v", j, err)
+				return err
 			}
 		}
 	}
 	err := vlrtrAgent.AddNetwork(uint16(1), uint32(1),
 		fmt.Sprintf("10.10.%d.%d", 1, 1))
 	if err != nil {
-		t.Errorf("Error adding vlan 1. Err: %v", err)
+		log.Errorf("Error adding vlan 1. Err: %v", err)
+		return err
 	}
+	return nil
 }
 
 // test adding full mesh vtep ports
-func TestOfnetSetupVtep(t *testing.T) {
+func SetupVteps() error {
 	for i := 0; i < NUM_AGENT; i++ {
 		for j := 0; j < NUM_AGENT; j++ {
 			if i != j {
 				log.Infof("Adding VTEP on %s for remoteIp: %s", localIpList[i], localIpList[j])
 				err := vrtrAgents[i].AddVtepPort(uint32(j+1), net.ParseIP(localIpList[j]))
 				if err != nil {
-					t.Errorf("Error adding VTEP port. Err: %v", err)
+					log.Errorf("Error adding VTEP port. Err: %v", err)
+					return err
 				}
 				err = vxlanAgents[i].AddVtepPort(uint32(j+1), net.ParseIP(localIpList[j]))
 				if err != nil {
-					t.Errorf("Error adding VTEP port. Err: %v", err)
+					log.Errorf("Error adding VTEP port. Err: %v", err)
+					return err
 				}
 			}
 		}
 	}
 
 	log.Infof("Finished setting up VTEP ports..")
+	return nil
 }
 
 // Test adding/deleting Vrouter routes
@@ -472,6 +488,12 @@ func TestWaitAndCleanup(t *testing.T) {
 			t.Errorf("Error deleting the bridge. Err: %v", err)
 		}
 	}
+	brName := "ovsbr3"
+	log.Infof("Deleting OVS bridge: %s", brName)
+	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
+	if err != nil {
+		t.Errorf("Error deleting the bridge. Err: %v", err)
+	}
 }
 
 // Run an ovs-ofctl command
@@ -616,7 +638,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 }
 
 // Test adding/deleting Vlrouter routes
-func TestOfnetVBgplrouteAddDelete(t *testing.T) {
+func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
@@ -631,8 +653,8 @@ func TestOfnetVBgplrouteAddDelete(t *testing.T) {
 	n, _ := bgp.NewPathAttributeNextHop("50.1.1.2").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 	vlrtrAgent.modRibCh <- path
-	log.Infof("Adding to rib")
-	time.Sleep(10 * time.Second)
+	log.Infof("Adding path to the Bgp Rib")
+	time.Sleep(2 * time.Second)
 
 	// verify flow entry exists
 	brName := "ovsbr3"
@@ -648,6 +670,5 @@ func TestOfnetVBgplrouteAddDelete(t *testing.T) {
 		t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
 		return
 	}
-
 	log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
 }

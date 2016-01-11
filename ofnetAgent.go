@@ -599,9 +599,9 @@ func (self *OfnetAgent) Serve() error {
 	}
 
 	routerId := self.routerIP
-	if routerId = nil {
+	if len(routerId) == 0 {
 		log.Errorf("Invalid router IP. Bgp service aborted")
-		return
+		return errors.New("Invalid router IP")
 	}
 	path.Nlri, _ = bgp.NewIPAddrPrefix(uint8(32), routerId).Serialize()
 	n, _ := bgp.NewPathAttributeNextHop("0.0.0.0").Serialize()
@@ -609,9 +609,10 @@ func (self *OfnetAgent) Serve() error {
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
-	err = self.ovsDriver.CreatePort("inb01", "internal", 1)    
+	err = self.ovsDriver.CreatePort("inb01", "internal", 1)
 	if err != nil {
 		log.Errorf("Error creating the port", err)
+		return err
 	}
 
 	cmd := exec.Command("ifconfig", "inb01", routerId+"/24")
@@ -622,9 +623,8 @@ func (self *OfnetAgent) Serve() error {
 
 	if intf == nil || ofPortno == 0 {
 		log.Errorf("Error fetching inb01 information", intf, ofPortno)
-		return
+		return errors.New("Unable to fetch inb01 info")
 	}
-
 
 	epreg := &OfnetEndpoint{
 		EndpointID:   routerId,
@@ -641,7 +641,6 @@ func (self *OfnetAgent) Serve() error {
 	self.endpointDb[routerId] = epreg
 	self.localEndpointDb[epreg.PortNo] = epreg
 
-	fmt.Println(*epreg)
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
 	//Add bgp router id as well
@@ -770,7 +769,6 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 	}
 
 	ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
-	fmt.Println(ipmask)
 
 	if path.IsWithdraw != true {
 		epreg := &OfnetEndpoint{
@@ -843,7 +841,7 @@ func (self *OfnetAgent) DeleteBgpNeighbors() error {
 
 	peer, err := client.GetNeighbor(context.Background(), arg)
 	if err != nil {
-		fmt.Println(err)
+		log.Errorf("GetNeighbor failed ", err)
 		return err
 	}
 	log.Infof("Deleteing Bgp peer from Bgp server")
@@ -993,7 +991,7 @@ func (self *OfnetAgent) monitorPeer() error {
 
 	stream, err := client.MonitorPeerState(context.Background(), arg)
 	if err != nil {
-		fmt.Println(err)
+		log.Errorf("MonitorPeerState failed ", err)
 		return err
 	}
 	for {
@@ -1001,7 +999,7 @@ func (self *OfnetAgent) monitorPeer() error {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			fmt.Println(err)
+			log.Errorf("MonitorPeerState stream failed :", err)
 			break
 		}
 		fmt.Printf("[NEIGH] %s fsm: %s admin: %s\n", s.Conf.NeighborAddress, s.Info.BgpState, s.Info.AdminState)
