@@ -257,8 +257,6 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	if res.Code != api.Error_SUCCESS {
 		return fmt.Errorf("error: code: %d, msg: %s", res.Code, res.Msg)
 	}
-	log.Infof("PRINTING THE RIB")
-	self.agent.ShowRib()
 
 	return nil
 }
