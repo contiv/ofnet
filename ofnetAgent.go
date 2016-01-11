@@ -599,13 +599,17 @@ func (self *OfnetAgent) Serve() error {
 	}
 
 	routerId := self.routerIP
+	if routerId = nil {
+		log.Errorf("Invalid router IP. Bgp service aborted")
+		return
+	}
 	path.Nlri, _ = bgp.NewIPAddrPrefix(uint8(32), routerId).Serialize()
 	n, _ := bgp.NewPathAttributeNextHop("0.0.0.0").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
-	err = self.ovsDriver.CreatePort("inb01", "internal", 1)
+	err = self.ovsDriver.CreatePort("inb01", "internal", 1)    
 	if err != nil {
 		log.Errorf("Error creating the port", err)
 	}
@@ -618,7 +622,12 @@ func (self *OfnetAgent) Serve() error {
 
 	if intf == nil || ofPortno == 0 {
 		log.Errorf("Error fetching inb01 information", intf, ofPortno)
+		return
 	}
+
+
+
+	if
 
 	epreg := &OfnetEndpoint{
 		EndpointID:   routerId,
