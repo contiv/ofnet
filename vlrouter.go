@@ -596,7 +596,7 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
 					self.agent.endpointDb[endpoint.EndpointID] = endpoint
 					self.AddEndpoint(endpoint)
-					self.ResolveUnresolvedRoutes(endpoint.MacAddrStr, inPort)
+					self.ResolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
 
 				}
 			}
@@ -642,7 +642,10 @@ func (self *Vlrouter) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 	return nil
 }
 
-func (self *Vlrouter) ResolveUnresolvedRoutes(MacAddrStr string, portNo uint32) {
+/*ResolveUnresolvedEPs walks through the unresolved endpoint list and resolves
+over given mac and port*/
+
+func (self *Vlrouter) ResolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 
 	for self.unresolvedEPs.Len() > 0 {
 		Element := self.unresolvedEPs.Front()
