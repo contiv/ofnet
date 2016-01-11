@@ -192,7 +192,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	brName := "ovsbr3"
+	brName := "contivVlanBridge"
 	ovsPort = uint16(9561)
 	ovsDrivers[2*NUM_AGENT] = ovsdbDriver.NewOvsDriver(brName)
 	err = ovsDrivers[2*NUM_AGENT].AddController("127.0.0.1", ovsPort)
@@ -200,8 +200,8 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error adding controller to ovs: %s", brName)
 	}
 
-	// Wait for 10sec for switch to connect to controller
-	time.Sleep(30 * time.Second)
+	// Wait for 20sec for switch to connect to controller
+	time.Sleep(20 * time.Second)
 
 	err = SetupVlans()
 	if err != nil {
@@ -265,7 +265,6 @@ func SetupVteps() error {
 			}
 		}
 	}
-
 	log.Infof("Finished setting up VTEP ports..")
 	return nil
 }
@@ -488,7 +487,7 @@ func TestWaitAndCleanup(t *testing.T) {
 			t.Errorf("Error deleting the bridge. Err: %v", err)
 		}
 	}
-	brName := "ovsbr3"
+	brName := "contivVlanBridge"
 	log.Infof("Deleting OVS bridge: %s", brName)
 	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
 	if err != nil {
@@ -579,7 +578,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	log.Infof("Finished adding local vlrouter endpoint")
 
 	// verify all ovs switches have this route
-	brName := "ovsbr3"
+	brName := "contivVlanBridge"
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
@@ -620,7 +619,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	log.Infof("Deleted endpoints. Verifying they are gone")
 
 	// verify flows are deleted
-	brName = "ovsbr3"
+	brName = "contivVlanBridge"
 
 	flowList, err = ofctlFlowDump(brName)
 	if err != nil {
@@ -657,7 +656,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// verify flow entry exists
-	brName := "ovsbr3"
+	brName := "contivVlanBridge"
 
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
@@ -671,4 +670,26 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		return
 	}
 	log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
+
+	// withdraw the route
+	path.IsWithdraw = true
+	vlrtrAgent.modRibCh <- path
+	log.Infof("Withdrawing route from BGP rib")
+
+	// verify flow entry exists
+	brName = "contivVlanBridge"
+
+	flowList, err = ofctlFlowDump(brName)
+	if err != nil {
+		t.Errorf("Error getting flow entries. Err: %v", err)
+	}
+
+	ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+	ipTableId = IP_TBL_ID
+	if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
+		t.Errorf("Found the route %s on ovs %s which was withdrawn", ipFlowMatch, brName)
+		return
+	}
+	log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
+
 }

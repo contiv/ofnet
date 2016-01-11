@@ -587,7 +587,8 @@ Bgp serve routine does the following:
 3) Kicks off routines to monitor route updates and peer state
 */
 func (self *OfnetAgent) Serve() error {
-	time.Sleep(5 * time.Second)
+	//time.Sleep(5 * time.Second)
+	self.WaitForSwitchConnection()
 
 	self.modRibCh = make(chan *api.Path, 16)
 	self.advPathCh = make(chan *api.Path, 16)
@@ -647,7 +648,7 @@ func (self *OfnetAgent) Serve() error {
 	// Add the endpoint to local routing table
 	self.endpointDb[routerId] = epreg
 	self.localEndpointDb[epreg.PortNo] = epreg
-
+	fmt.Println(epreg)
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
 	//Add bgp router id as well
