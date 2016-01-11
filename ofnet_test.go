@@ -16,6 +16,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 	api "github.com/osrg/gobgp/api"
 	"github.com/osrg/gobgp/packet"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 const NUM_MASTER = 2
@@ -104,7 +106,7 @@ func TestMain(m *testing.M) {
 	rpcPort := uint16(9551)
 	ovsPort := uint16(9561)
 	lclIp := net.ParseIP(localIpList[0])
-	vlrtrAgent, err = NewOfnetAgent("vlrouter", lclIp, rpcPort, ovsPort, "50.1.1.1", "eth2")
+	vlrtrAgent, err = NewOfnetAgent("vlrouter", lclIp, rpcPort, ovsPort, "50.1.1.1", "inb01")
 	if err != nil {
 		log.Fatalf("Error creating ofnet agent. Err: %v", err)
 	}
@@ -691,5 +693,53 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		return
 	}
 	log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
+
+}
+
+func TestOfnetBgpPeerAddDelete(t *testing.T) {
+
+	as := "500"
+	peer := "50.1.1.2"
+
+	//Add Bgp neighbor and check if it is successful
+
+	err := vlrtrAgent.AddBgpNeighbors(as, peer)
+	if err != nil {
+		t.Errorf("Error adding Bgp Neighbor", err)
+		return
+	}
+
+	timeout := grpc.WithTimeout(time.Second)
+	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := api.NewGobgpApiClient(conn)
+	if client == nil {
+		t.Errorf("GoBgpApiclient is invalid")
+	}
+	arg := &api.Arguments{Name: vlrtrAgent.myBgpPeer}
+
+	//Check if neighbor is added to bgp server
+	bgpPeer, err := client.GetNeighbor(context.Background(), arg)
+	if err != nil {
+		t.Errorf("GetNeighbor failed ", err)
+		return
+	}
+
+	//Delete BGP neighbor
+	err = vlrtrAgent.DeleteBgpNeighbors()
+	if err != nil {
+		t.Errorf("Error Deleting Bgp Neighbor", err)
+		return
+	}
+
+	//Check if neighbor is added to bgp server
+	bgpPeer, err = client.GetNeighbor(context.Background(), arg)
+	if bgpPeer != nil {
+		t.Errorf("Neighbor is not deleted ", err)
+		return
+	}
 
 }
