@@ -626,9 +626,6 @@ func (self *OfnetAgent) Serve() error {
 	}
 
 
-
-	if
-
 	epreg := &OfnetEndpoint{
 		EndpointID:   routerId,
 		EndpointType: "internal-bgp",
