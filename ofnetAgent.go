@@ -587,7 +587,7 @@ Bgp serve routine does the following:
 3) Kicks off routines to monitor route updates and peer state
 */
 func (self *OfnetAgent) Serve() error {
-	//time.Sleep(5 * time.Second)
+	time.Sleep(5 * time.Second)
 	self.WaitForSwitchConnection()
 
 	self.modRibCh = make(chan *api.Path, 16)
