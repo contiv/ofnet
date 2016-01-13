@@ -109,7 +109,8 @@ const MAC_DEST_TBL_ID = 5
 /*routerInfo[0] - > IP of the router intf
   routerInfo[1] -> Uplink nexthop interface
 */
-func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16, ovsPort uint16, routerInfo ...string) (*OfnetAgent, error) {
+func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16,
+	ovsPort uint16, routerInfo ...string) (*OfnetAgent, error) {
 	agent := new(OfnetAgent)
 
 	// Init params
@@ -756,7 +757,8 @@ func (self *OfnetAgent) modRib(path *api.Path) error {
 	}
 
 	endpointIPNet, _ := netlink.ParseIPNet(nlri.String())
-	log.Infof("Bgp Rib Received endpoint update for %v , with nexthop %v", endpointIPNet, nextHop)
+	log.Infof("Bgp Rib Received endpoint update for %v , with nexthop %v",
+		endpointIPNet, nextHop)
 
 	//check if bgp published a route local to the host
 	epid := endpointIPNet.IP.Mask(endpointIPNet.Mask).String()
@@ -971,7 +973,8 @@ func SetNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
 	neighbor.Timers.TimersConfig.ConnectRetry = float64(bgpconf.DEFAULT_CONNECT_RETRY)
 	neighbor.Timers.TimersConfig.HoldTime = float64(bgpconf.DEFAULT_HOLDTIME)
 	neighbor.Timers.TimersConfig.KeepaliveInterval = float64(bgpconf.DEFAULT_HOLDTIME / 3)
-	neighbor.Timers.TimersConfig.IdleHoldTimeAfterReset = float64(bgpconf.DEFAULT_IDLE_HOLDTIME_AFTER_RESET)
+	neighbor.Timers.TimersConfig.IdleHoldTimeAfterReset =
+		float64(bgpconf.DEFAULT_IDLE_HOLDTIME_AFTER_RESET)
 	//FIX ME need to check with global peer to set internal or external
 	neighbor.NeighborConfig.PeerType = bgpconf.PEER_TYPE_EXTERNAL
 	neighbor.Transport.TransportConfig.PassiveMode = false
@@ -1008,7 +1011,8 @@ func (self *OfnetAgent) monitorPeer() error {
 			log.Errorf("MonitorPeerState stream failed :", err)
 			break
 		}
-		fmt.Printf("[NEIGH] %s fsm: %s admin: %s\n", s.Conf.NeighborAddress, s.Info.BgpState, s.Info.AdminState)
+		fmt.Printf("[NEIGH] %s fsm: %s admin: %s\n", s.Conf.NeighborAddress,
+			s.Info.BgpState, s.Info.AdminState)
 		if oldState == "BGP_FSM_ESTABLISHED" && oldAdminState == "ADMIN_STATE_UP" {
 			uplink, _ := self.ovsDriver.GetOfpPortNo(self.vlanIntf)
 			/*If the state changed from being established to idle or active:
