@@ -652,11 +652,11 @@ func (self *OfnetAgent) Serve() error {
 	err = self.datapath.AddLocalEndpoint(*epreg)
 
 	//Add bgp router id as well
-	bgpGlobalCfg := bgpconf.Global{}
-	SetDefaultGlobalConfigValues(&bgpGlobalCfg)
+	bgpGlobalCfg := &bgpconf.Global{}
+	SetDefaultGlobalConfigValues(bgpGlobalCfg)
 	bgpGlobalCfg.GlobalConfig.RouterId = net.ParseIP(routerId)
 	bgpGlobalCfg.GlobalConfig.As = 65002
-	self.bgpServer.SetGlobalType(bgpGlobalCfg)
+	self.bgpServer.SetGlobalType(*bgpGlobalCfg)
 
 	self.advPathCh <- path
 
@@ -895,12 +895,11 @@ func (self *OfnetAgent) AddBgpNeighbors(As string, peer string) error {
 
 	var policyConfig bgpconf.RoutingPolicy
 	peerAs, _ := strconv.Atoi(As)
-	p := bgpconf.Neighbor{}
-	SetNeighborConfigValues(&p)
+	p := &bgpconf.Neighbor{}
+	SetNeighborConfigValues(p)
 	p.NeighborAddress = net.ParseIP(peer)
 	p.NeighborConfig.NeighborAddress = net.ParseIP(peer)
 	p.NeighborConfig.PeerAs = uint32(peerAs)
-
 	//FIX ME set ipv6 depending on peerip (for v6 BGP)
 	p.AfiSafis.AfiSafiList = []bgpconf.AfiSafi{
 		bgpconf.AfiSafi{AfiSafiName: "ipv4-unicast"}}
@@ -909,7 +908,7 @@ func (self *OfnetAgent) AddBgpNeighbors(As string, peer string) error {
 		BmpServerList: []bgpconf.BmpServer{},
 	})
 	log.Infof("Peer %v is added   3 ", p.NeighborConfig.NeighborAddress)
-	self.bgpServer.PeerAdd(p)
+	self.bgpServer.PeerAdd(*p)
 	//	if policyConfig == nil {
 	//policyConfig = &newConfig.Policy
 	self.bgpServer.SetPolicy(policyConfig)
@@ -969,14 +968,13 @@ func SetDefaultGlobalConfigValues(bt *bgpconf.Global) error {
 //SetNeighborConfigValues sets the default neighbor configs for bgp
 func SetNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
 
-	timerConfig := neighbor.Timers.TimersConfig
-	timerConfig.HoldTime = float64(bgpconf.DEFAULT_CONNECT_RETRY)
-	timerConfig.HoldTime = float64(bgpconf.DEFAULT_HOLDTIME)
-	timerConfig.KeepaliveInterval = timerConfig.HoldTime / 3
-	timerConfig.IdleHoldTimeAfterReset = float64(bgpconf.DEFAULT_IDLE_HOLDTIME_AFTER_RESET)
+	neighbor.Timers.TimersConfig.ConnectRetry = float64(bgpconf.DEFAULT_CONNECT_RETRY)
+	neighbor.Timers.TimersConfig.HoldTime = float64(bgpconf.DEFAULT_HOLDTIME)
+	neighbor.Timers.TimersConfig.KeepaliveInterval = float64(bgpconf.DEFAULT_HOLDTIME / 3)
+	neighbor.Timers.TimersConfig.IdleHoldTimeAfterReset = float64(bgpconf.DEFAULT_IDLE_HOLDTIME_AFTER_RESET)
 	//FIX ME need to check with global peer to set internal or external
-	neighbor.NeighborConfig.PeerType = bgpconf.PEER_TYPE_INTERNAL
-
+	neighbor.NeighborConfig.PeerType = bgpconf.PEER_TYPE_EXTERNAL
+	neighbor.Transport.TransportConfig.PassiveMode = false
 	return nil
 }
 
