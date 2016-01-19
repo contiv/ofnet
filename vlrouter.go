@@ -222,7 +222,7 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
 	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
 	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop(self.agent.routerIP).Serialize()
+	n, _ := bgp.NewPathAttributeNextHop(self.agent.GetRouterInfo().RouterIP).Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 
 	name := ""
@@ -311,7 +311,7 @@ func (self *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
 	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
 	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop(self.agent.routerIP).Serialize()
+	n, _ := bgp.NewPathAttributeNextHop(self.agent.GetRouterInfo().RouterIP).Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 	path.IsWithdraw = true
 	name := ""
@@ -566,7 +566,7 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 			} else {
 				if endpoint.EndpointType == "internal" || endpoint.EndpointType == "internal-bgp" {
 					//srcMac, _ = net.ParseMAC(endpoint.MacAddrStr)
-					intf, _ = net.InterfaceByName(self.agent.vlanIntf)
+					intf, _ = net.InterfaceByName(self.agent.GetRouterInfo().VlanIntf)
 					srcMac = intf.HardwareAddr
 				} else if endpoint.EndpointType == "external" || endpoint.EndpointType == "external-bgp" {
 					endpoint = self.agent.getEndpointByIp(arpHdr.IPSrc)

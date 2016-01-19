@@ -63,6 +63,21 @@ type OfnetDatapath interface {
 	RemoveVlan(vlanId uint16, vni uint32) error
 }
 
+// Interface implemented by each control protocol.
+type OfnetProto interface {
+
+	//Create a protocol server
+	StartProtoServer(routerInfo OfnetProtoRouterInfo) error
+
+	//Add a Protocol Neighbor
+	AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) error
+
+	//Delete a Protocol Neighbor
+	DeleteProtoNeighbor() error
+	//Get Protocol router info
+	GetRouterInfo() *OfnetProtoRouterInfo
+}
+
 // Default port numbers
 const OFNET_MASTER_PORT = 9001
 const OFNET_AGENT_VXLAN_PORT = 9002
@@ -103,4 +118,16 @@ type OfnetPolicyRule struct {
 	DstPort          uint16 // destination port
 	TcpFlags         string // TCP flags to match: syn || syn,ack || ack || syn,!ack || !syn,ack;
 	Action           string // rule action: 'accept' or 'deny'
+}
+
+type OfnetProtoNeighborInfo struct {
+	ProtocolType string // type of protocol
+	NeighborIP   string // ip address of the neighbor
+	As           string // As of neighbor if applicable
+}
+
+type OfnetProtoRouterInfo struct {
+	ProtocolType string // type of protocol
+	RouterIP     string // ip address of the neighbor
+	VlanIntf     string // uplink L2 intf
 }
