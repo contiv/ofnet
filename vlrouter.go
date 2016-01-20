@@ -58,6 +58,7 @@ type Vlrouter struct {
 	myRouterMac   net.HardwareAddr //Router mac used for external proxy
 	MyBgpPeer     string           // bgp neighbor
 	unresolvedEPs *list.List       // unresolved endpoint list
+
 }
 
 // Create a new vlrouter instance
@@ -464,7 +465,7 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 			if endpoint != nil && endpoint.EndpointType == "external-bgp" {
 				//endpoint exists from where the arp is received.
 				if endpoint.PortNo == 0 {
-					log.Infof("Received ARP from BGP Peer over : Resolving over", endpoint.PortNo, endpoint.MacAddrStr)
+					log.Infof("Received ARP from BGP Peer on %s: Mac: %s", endpoint.PortNo, endpoint.MacAddrStr)
 					//learn the mac address and portno for the endpoint
 					self.RemoveEndpoint(endpoint)
 					endpoint.PortNo = inPort
