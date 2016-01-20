@@ -50,6 +50,8 @@ type OfnetBgp struct {
 	myRouterMac   net.HardwareAddr //Router mac used for external proxy
 	myBgpPeer     string           // bgp neighbor
 	unresolvedEPs *list.List       // unresolved endpoint list
+	cc            *grpc.ClientConn //grpc client connection
+
 }
 
 // Create a new vlrouter instance
@@ -95,7 +97,7 @@ Bgp serve routine does the following:
 3) Kicks off routines to monitor route updates and peer state
 */
 func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
-	time.Sleep(30 * time.Second)
+	time.Sleep(5 * time.Second)
 	self.agent.WaitForSwitchConnection()
 
 	self.modRibCh = make(chan *api.Path, 16)
@@ -106,7 +108,10 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := api.NewGobgpApiClient(conn)
+	self.cc = conn
+	defer self.cc.Close()
+
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 
 	}
@@ -184,6 +189,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 			}
 		}
 	}
+
 }
 
 //DeleteBgpNeighbors deletes bgp neighbor for the host
@@ -196,13 +202,7 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	4) Mark the routes learn via json rpc as unresolved
 	*/
 
-	timeout := grpc.WithTimeout(time.Second)
-	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	client := api.NewGobgpApiClient(conn)
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 
 	}
@@ -314,12 +314,6 @@ func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
 }
 
 func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
-	//dial grpc server
-	conn, err := grpc.Dial("127.0.0.1:8080", grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
 
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
@@ -345,7 +339,7 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 	}
 
 	//send arguement stream
-	client := api.NewGobgpApiClient(conn)
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 		log.Errorf("Gobgpapi stream invalid")
 		return nil
@@ -376,13 +370,6 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 
 func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 
-	//dial grpc server
-	conn, err := grpc.Dial("127.0.0.1:8080", grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
 	}
@@ -407,7 +394,7 @@ func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error
 	}
 
 	//send arguement stream
-	client := api.NewGobgpApiClient(conn)
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 		log.Errorf("Gobgpapi stream invalid")
 		return nil
@@ -439,13 +426,7 @@ func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error
 //monitorBest monitors for route updates/changes form peer
 func (self *OfnetBgp) monitorBest() error {
 
-	timeout := grpc.WithTimeout(time.Second)
-	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	client := api.NewGobgpApiClient(conn)
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 
 	}
@@ -477,13 +458,7 @@ func (self *OfnetBgp) monitorPeer() error {
 
 	var oldAdminState, oldState string
 
-	timeout := grpc.WithTimeout(time.Second)
-	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	client := api.NewGobgpApiClient(conn)
+	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
 
 	}

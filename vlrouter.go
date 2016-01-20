@@ -202,7 +202,7 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		localEpIP:    endpoint.IpAddr.String(),
 		nextHopIP:    self.agent.GetRouterInfo().RouterIP,
 	}
-
+	log.Infof("ADDING LOCAL ROUTE AND PASSING TO BGP")
 	self.agent.AddLocalProtoRoute(path)
 
 	return nil
