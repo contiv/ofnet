@@ -79,6 +79,11 @@ func NewOfnetBgp(agent *OfnetAgent, routerInfo []string) *OfnetBgp {
 	}
 
 	ofnetBgp.bgpServer, ofnetBgp.grpcServer = createBgpServer()
+
+	if ofnetBgp.bgpServer == nil || ofnetBgp.grpcServer == nil {
+		log.Errorf("Error instantiating Bgp server")
+		return nil
+	}
 	//go routine to start gobgp server
 	go func() {
 		rInfo := OfnetProtoRouterInfo{ProtocolType: "bgp", RouterIP: ofnetBgp.routerIP}
@@ -113,7 +118,8 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 
 	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
-
+		log.Errorf("Invalid Gobgpapi client")
+		return errors.New("Error creating Gobgpapiclient")
 	}
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
@@ -189,7 +195,6 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 			}
 		}
 	}
-
 }
 
 //DeleteProtoNeighbor deletes bgp neighbor for the host
@@ -201,10 +206,11 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	3) Finally delete all routes learnt on the nexthop bgp port.
 	4) Mark the routes learn via json rpc as unresolved
 	*/
-
+	log.Infof("Received DeleteProtoNeighbor to delete bgp neighbor %v", self.myBgpPeer)
 	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
-
+		log.Errorf("Invalid Gobgpapi client")
+		return errors.New("Error creating Gobgpapiclient")
 	}
 	arg := &api.Arguments{Name: self.myBgpPeer}
 
@@ -226,7 +232,9 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
 		BmpServerList: []bgpconf.BmpServer{},
 	})
+
 	self.bgpServer.PeerDelete(p)
+
 	bgpEndpoint := self.agent.getEndpointByIp(net.ParseIP(self.myBgpPeer))
 	self.agent.datapath.RemoveEndpoint(bgpEndpoint)
 	delete(self.agent.endpointDb, self.myBgpPeer)
@@ -248,13 +256,15 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 		}
 	}
 	return nil
-
 }
 
 //AddProtoNeighbor adds bgp neighbor
 func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) error {
 
+	log.Infof("Received AddProtoNeighbor to Add bgp neighbor %v", neighborInfo.NeighborIP)
+
 	var policyConfig bgpconf.RoutingPolicy
+
 	peerAs, _ := strconv.Atoi(neighborInfo.As)
 	p := &bgpconf.Neighbor{}
 	setNeighborConfigValues(p)
@@ -264,11 +274,10 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 	//FIX ME set ipv6 depending on peerip (for v6 BGP)
 	p.AfiSafis.AfiSafiList = []bgpconf.AfiSafi{
 		bgpconf.AfiSafi{AfiSafiName: "ipv4-unicast"}}
-	log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
 	self.bgpServer.SetBmpConfig(bgpconf.BmpServers{
 		BmpServerList: []bgpconf.BmpServer{},
 	})
-	log.Infof("Peer %v is added   3 ", p.NeighborConfig.NeighborAddress)
+
 	self.bgpServer.PeerAdd(*p)
 	//	if policyConfig == nil {
 	//policyConfig = &newConfig.Policy
@@ -281,6 +290,7 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 	//	}
 
 	log.Infof("Peer %v is added", p.NeighborConfig.NeighborAddress)
+
 	epreg := &OfnetEndpoint{
 		EndpointID:   neighborInfo.NeighborIP,
 		EndpointType: "external-bgp",
@@ -301,6 +311,7 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 		return err
 	}
 	self.myBgpPeer = neighborInfo.NeighborIP
+
 	return nil
 }
 
@@ -316,6 +327,8 @@ func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
 
 //AddLocalProtoRoute is used to add local endpoint to the protocol RIB
 func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
+
+	log.Infof("Received AddLocalProtoRoute to add local endpoint to protocol RIB: %v", pathInfo)
 
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
@@ -372,6 +385,8 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 
 //DeleteLocalProtoRoute withdraws local endpoints from protocol RIB
 func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
+
+	log.Infof("Received DeleteLocalProtoRoute to withdraw local endpoint to protocol RIB: %v", pathInfo)
 
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
@@ -431,7 +446,8 @@ func (self *OfnetBgp) monitorBest() error {
 
 	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
-
+		log.Errorf("Invalid Gobgpapi client")
+		return errors.New("Error creating Gobgpapiclient")
 	}
 	arg := &api.Arguments{
 		Resource: api.Resource_GLOBAL,
@@ -463,7 +479,8 @@ func (self *OfnetBgp) monitorPeer() error {
 
 	client := api.NewGobgpApiClient(self.cc)
 	if client == nil {
-
+		log.Errorf("Invalid Gobgpapi client")
+		return errors.New("Error creating Gobgpapiclient")
 	}
 	arg := &api.Arguments{}
 
@@ -613,14 +630,18 @@ func createBgpServer() (bgpServer *bgpserver.BgpServer, grpcServer *bgpserver.Se
 	bgpServer = bgpserver.NewBgpServer(bgp.BGP_PORT)
 	if bgpServer == nil {
 		log.Errorf("Error creating bgp server")
+		return
+	} else {
+		go bgpServer.Serve()
 	}
-	go bgpServer.Serve()
 	// start grpc Server
 	grpcServer = bgpserver.NewGrpcServer(bgpserver.GRPC_PORT, bgpServer.GrpcReqCh)
 	if grpcServer == nil {
 		log.Errorf("Error creating bgp server")
+		return
+	} else {
+		go grpcServer.Serve()
 	}
-	go grpcServer.Serve()
 	return
 }
 
