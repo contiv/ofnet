@@ -192,7 +192,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 
 }
 
-//DeleteBgpNeighbors deletes bgp neighbor for the host
+//DeleteProtoNeighbor deletes bgp neighbor for the host
 func (self *OfnetBgp) DeleteProtoNeighbor() error {
 
 	/*As a part of delete bgp neighbors
@@ -251,7 +251,7 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 
 }
 
-//AddBgpNeighbors add bgp neighbor
+//AddProtoNeighbor adds bgp neighbor
 func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) error {
 
 	var policyConfig bgpconf.RoutingPolicy
@@ -304,6 +304,7 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 	return nil
 }
 
+//GetRouterInfo returns the configured RouterInfo
 func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
 	routerInfo := &OfnetProtoRouterInfo{
 		ProtocolType: "bgp",
@@ -313,6 +314,7 @@ func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
 	return routerInfo
 }
 
+//AddLocalProtoRoute is used to add local endpoint to the protocol RIB
 func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 
 	path := &api.Path{
@@ -368,6 +370,7 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 	return nil
 }
 
+//DeleteLocalProtoRoute withdraws local endpoints from protocol RIB
 func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error {
 
 	path := &api.Path{
