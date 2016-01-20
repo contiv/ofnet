@@ -293,6 +293,12 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 
 	epId := self.getEndpointId(endpoint)
 
+	// ignore duplicate adds
+	if (self.localEndpointDb[endpoint.PortNo] != nil) &&
+		(self.localEndpointDb[endpoint.PortNo].EndpointID == epId) {
+		return nil
+	}
+
 	// Build endpoint registry info
 	epreg := &OfnetEndpoint{
 		EndpointID:    epId,
