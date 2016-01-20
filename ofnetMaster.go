@@ -142,7 +142,6 @@ func (self *OfnetMaster) EndpointAdd(ep *OfnetEndpoint, ret *bool) error {
 
 	// Publish it to all agents except where it came from
 	for _, node := range self.agentDb {
-		log.Infof("For loop")
 		if node.HostAddr != ep.OriginatorIp.String() {
 			var resp bool
 

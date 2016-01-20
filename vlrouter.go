@@ -29,20 +29,14 @@ package ofnet
 import (
 	//"fmt"
 	"errors"
-	"fmt"
 	"net"
 	"net/rpc"
 
 	"container/list"
+	log "github.com/Sirupsen/logrus"
 	"github.com/contiv/ofnet/ofctrl"
-	api "github.com/osrg/gobgp/api"
-	"github.com/osrg/gobgp/packet"
 	"github.com/shaleman/libOpenflow/openflow13"
 	"github.com/shaleman/libOpenflow/protocol"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 // Vlrouter state.
@@ -203,63 +197,13 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return nil
 	}
 
-	//dial grpc server
-	conn, err := grpc.Dial("127.0.0.1:8080", grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-
-	path := &api.Path{
-		Pattrs: make([][]byte, 0),
+	path := &OfnetProtoRouteInfo{
+		ProtocolType: "bgp",
+		localEpIP:    endpoint.IpAddr.String(),
+		nextHopIP:    self.agent.GetRouterInfo().RouterIP,
 	}
 
-	// form the path structure with appropriate path attributes
-	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
-	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
-	path.Pattrs = append(path.Pattrs, origin)
-	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
-	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
-	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop(self.agent.GetRouterInfo().RouterIP).Serialize()
-	path.Pattrs = append(path.Pattrs, n)
-
-	name := ""
-
-	arg := &api.ModPathArguments{
-		Resource: api.Resource_GLOBAL,
-		Name:     name,
-		Paths:    []*api.Path{path},
-	}
-
-	//send arguement stream
-	client := api.NewGobgpApiClient(conn)
-	if client == nil {
-		log.Errorf("Gobgpapi stream invalid")
-		return nil
-	}
-
-	stream, err := client.ModPath(context.Background())
-	if err != nil {
-		log.Errorf("Fail to enforce Modpathi", err)
-		return err
-	}
-
-	err = stream.Send(arg)
-	if err != nil {
-		log.Errorf("Failed to send strean", err)
-		return err
-	}
-	stream.CloseSend()
-	res, e := stream.CloseAndRecv()
-	if e != nil {
-		log.Errorf("Falied toclose stream ")
-		return e
-	}
-	if res.Code != api.Error_SUCCESS {
-		return fmt.Errorf("error: code: %d, msg: %s", res.Code, res.Msg)
-	}
+	self.agent.AddLocalProtoRoute(path)
 
 	return nil
 }
@@ -292,63 +236,14 @@ func (self *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 		log.Errorf("Error deleting the endpoint: %+v. Err: %v", endpoint, err)
 	}
 
-	//dial grpc server
-	conn, err := grpc.Dial("127.0.0.1:8080", grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-
-	path := &api.Path{
-		Pattrs: make([][]byte, 0),
+	path := &OfnetProtoRouteInfo{
+		ProtocolType: "bgp",
+		localEpIP:    endpoint.IpAddr.String(),
+		nextHopIP:    self.agent.GetRouterInfo().RouterIP,
 	}
 
-	//form appropraite path attributes for path to be withdrawn
-	nlri := bgp.NewIPAddrPrefix(32, endpoint.IpAddr.String())
-	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
-	path.Pattrs = append(path.Pattrs, origin)
-	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
-	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
-	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop(self.agent.GetRouterInfo().RouterIP).Serialize()
-	path.Pattrs = append(path.Pattrs, n)
-	path.IsWithdraw = true
-	name := ""
+	self.agent.DeleteLocalProtoRoute(path)
 
-	arg := &api.ModPathArguments{
-		Resource: api.Resource_GLOBAL,
-		Name:     name,
-		Paths:    []*api.Path{path},
-	}
-
-	//send arguement stream
-	client := api.NewGobgpApiClient(conn)
-	if client == nil {
-		log.Errorf("Gobgpapi stream invalid")
-		return nil
-	}
-
-	stream, err := client.ModPath(context.Background())
-	log.Infof("The stream is ", stream)
-	if err != nil {
-		log.Errorf("Fail to enforce Modpathi", err)
-		return err
-	}
-	err = stream.Send(arg)
-	if err != nil {
-		log.Errorf("Failed to send strean", err)
-		return err
-	}
-	stream.CloseSend()
-	res, e := stream.CloseAndRecv()
-	if e != nil {
-		log.Errorf("Falied toclose stream ")
-		return e
-	}
-	if res.Code != api.Error_SUCCESS {
-		return fmt.Errorf("error: code: %d, msg: %s", res.Code, res.Msg)
-	}
 	return nil
 }
 
@@ -395,25 +290,7 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		self.MyBgpPeer = endpoint.IpAddr.String()
 	}
 	log.Infof("AddEndpoint call for endpoint: %+v", endpoint)
-	//Install a flow entry for vlan mapping and point it to IP table
-	// FIXME: Remove this. This has to be added as a part of Add vlan .
-	portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
-		Priority:  FLOW_MATCH_PRIORITY,
-		InputPort: endpoint.PortNo,
-	})
 
-	// Set the vlan and install it
-	// FIXME: Dont set the vlan till multi-vrf support. We cant pop vlan unless flow matches on vlan
-	// portVlanFlow.SetVlan(endpoint.Vlan)
-	if err == nil {
-		portVlanFlow.Next(self.ipTable)
-		// save the flow entry
-		self.portVlanFlowDb[endpoint.PortNo] = portVlanFlow
-	} else {
-		portVlanFlow = self.portVlanFlowDb[endpoint.PortNo]
-		portVlanFlow.Next(self.ipTable)
-	}
-	fmt.Println(endpoint.PortNo)
 	outPort, err := self.ofSwitch.OutputPort(endpoint.PortNo)
 	if err != nil {
 		log.Errorf("Error creating output port %d. Err: %v", endpoint.PortNo, err)
@@ -435,8 +312,6 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	// Set Mac addresses
 	DAMac, _ := net.ParseMAC(endpoint.MacAddrStr)
 	ipFlow.SetMacDa(DAMac)
-	// This is strictly not required at the source OVS. Source mac will be
-	// overwritten by the dest OVS anyway. We keep the source mac for debugging purposes..
 	ipFlow.SetMacSa(self.myRouterMac)
 
 	// Set VNI
@@ -596,7 +471,7 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
 					self.agent.endpointDb[endpoint.EndpointID] = endpoint
 					self.AddEndpoint(endpoint)
-					self.ResolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
+					self.resolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
 
 				}
 			}
@@ -642,10 +517,10 @@ func (self *Vlrouter) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 	return nil
 }
 
-/*ResolveUnresolvedEPs walks through the unresolved endpoint list and resolves
+/*resolveUnresolvedEPs walks through the unresolved endpoint list and resolves
 over given mac and port*/
 
-func (self *Vlrouter) ResolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
+func (self *Vlrouter) resolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 
 	for self.unresolvedEPs.Len() > 0 {
 		Element := self.unresolvedEPs.Front()
@@ -659,4 +534,36 @@ func (self *Vlrouter) ResolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 			self.unresolvedEPs.Remove(Element)
 		}
 	}
+}
+
+// AddUplink adds an uplink to the switch
+func (self *Vlrouter) AddUplink(portNo uint32) error {
+	log.Infof("Adding uplink port: %+v", portNo)
+
+	// Install a flow entry for vlan mapping and point it to Mac table
+	portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
+		Priority:  FLOW_MATCH_PRIORITY,
+		InputPort: portNo,
+	})
+	if err != nil {
+		log.Errorf("Error creating portvlan entry. Err: %v", err)
+		return err
+	}
+
+	// Packets coming from uplink go thru policy and iptable lookup
+	//FIXME: Change next to Policy table
+	err = portVlanFlow.Next(self.ipTable)
+	if err != nil {
+		log.Errorf("Error installing portvlan entry. Err: %v", err)
+		return err
+	}
+
+	// save the flow entry
+	self.portVlanFlowDb[portNo] = portVlanFlow
+
+	return nil
+}
+
+func (self *Vlrouter) RemoveUplink(portNo uint32) error {
+	return nil
 }

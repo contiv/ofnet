@@ -61,6 +61,12 @@ type OfnetDatapath interface {
 
 	// Remove a vlan
 	RemoveVlan(vlanId uint16, vni uint32) error
+
+	//Add uplink port
+	AddUplink(portNo uint32) error
+
+	//Delete uplink port
+	RemoveUplink(portNo uint32) error
 }
 
 // Interface implemented by each control protocol.
@@ -74,8 +80,15 @@ type OfnetProto interface {
 
 	//Delete a Protocol Neighbor
 	DeleteProtoNeighbor() error
+
 	//Get Protocol router info
 	GetRouterInfo() *OfnetProtoRouterInfo
+
+	//Add Local Route
+	AddLocalProtoRoute(path *OfnetProtoRouteInfo) error
+
+	//Delete Local Route
+	DeleteLocalProtoRoute(path *OfnetProtoRouteInfo) error
 }
 
 // Default port numbers
@@ -130,4 +143,10 @@ type OfnetProtoRouterInfo struct {
 	ProtocolType string // type of protocol
 	RouterIP     string // ip address of the neighbor
 	VlanIntf     string // uplink L2 intf
+}
+
+type OfnetProtoRouteInfo struct {
+	ProtocolType string // type of protocol
+	localEpIP    string
+	nextHopIP    string
 }

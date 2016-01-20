@@ -376,6 +376,18 @@ func (self *Vrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 	return nil
 }
 
+// AddUplink adds an uplink to the switch
+func (vr *Vrouter) AddUplink(portNo uint32) error {
+	// Nothing to do
+	return nil
+}
+
+// RemoveUplink remove an uplink to the switch
+func (vr *Vrouter) RemoveUplink(portNo uint32) error {
+	// Nothing to do
+	return nil
+}
+
 // initialize Fgraph on the switch
 func (self *Vrouter) initFgraph() error {
 	sw := self.ofSwitch

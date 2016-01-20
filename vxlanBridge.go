@@ -532,6 +532,16 @@ func (self *Vxlan) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 	return nil
 }
 
+// AddUplink adds an uplink to the switch
+func (vx *Vxlan) AddUplink(portNo uint32) error {
+	return nil
+}
+
+// RemoveUplink remove an uplink to the switch
+func (vx *Vxlan) RemoveUplink(portNo uint32) error {
+	return nil
+}
+
 // initialize Fgraph on the switch
 func (self *Vxlan) initFgraph() error {
 	sw := self.ofSwitch

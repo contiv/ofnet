@@ -586,7 +586,6 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 		t.Errorf("Error getting flow entries. Err: %v", err)
 		return
 	}
-	log.Infof("FLOWLIST ISSSSS %v", flowList)
 
 	// verify flow entry exists
 	ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")

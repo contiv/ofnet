@@ -563,3 +563,23 @@ func (self *OfnetAgent) DeleteBgpNeighbors() error {
 func (self *OfnetAgent) GetRouterInfo() *OfnetProtoRouterInfo {
 	return self.protopath.GetRouterInfo()
 }
+
+func (self *OfnetAgent) AddLocalProtoRoute(path *OfnetProtoRouteInfo) {
+	if self.protopath != nil {
+		self.protopath.AddLocalProtoRoute(path)
+	}
+}
+
+func (self *OfnetAgent) DeleteLocalProtoRoute(path *OfnetProtoRouteInfo) {
+	if self.protopath != nil {
+		self.protopath.DeleteLocalProtoRoute(path)
+	}
+}
+
+func (self *OfnetAgent) AddUplink(portNo uint32) error {
+	return self.datapath.AddUplink(portNo)
+}
+
+func (self *OfnetAgent) RemoveUplink(portNo uint32) error {
+	return self.datapath.RemoveUplink(portNo)
+}
