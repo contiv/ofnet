@@ -26,6 +26,7 @@ import (
 	"container/list"
 	log "github.com/Sirupsen/logrus"
 
+	"github.com/contiv/ofnet/libpkt"
 	api "github.com/osrg/gobgp/api"
 	bgpconf "github.com/osrg/gobgp/config"
 	"github.com/osrg/gobgp/packet"
@@ -238,6 +239,7 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	bgpEndpoint := self.agent.getEndpointByIp(net.ParseIP(self.myBgpPeer))
 	self.agent.datapath.RemoveEndpoint(bgpEndpoint)
 	delete(self.agent.endpointDb, self.myBgpPeer)
+	self.myBgpPeer = ""
 
 	uplink, _ := self.agent.ovsDriver.GetOfpPortNo(self.vlanIntf)
 
@@ -682,29 +684,35 @@ func setNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
 	return nil
 }
 
+/*
 func (self *OfnetBgp) sendArp() {
 
 	//Get the Mac of the vlan intf
 	//Get the portno of the uplink
 	//Build an arp packet and send on portno of uplink
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 	for {
+		if self.myBgpPeer == "" {
+			return
+		}
+
 		intf, _ := net.InterfaceByName(self.vlanIntf)
 		ofPortno, _ := self.agent.ovsDriver.GetOfpPortNo(self.vlanIntf)
 		bMac, _ := net.ParseMAC("FF:FF:FF:FF:FF:FF")
+		zeroMac, _ := net.ParseMAC("00:00:00:00:00:00")
 
 		arpReq, _ := protocol.NewARP(protocol.Type_Request)
 		arpReq.HWSrc = intf.HardwareAddr
 		arpReq.IPSrc = net.ParseIP(self.routerIP)
-		arpReq.HWDst, _ = net.ParseMAC("0")
+		arpReq.HWDst = zeroMac
 		arpReq.IPDst = net.ParseIP(self.myBgpPeer)
 
 		log.Infof("Sending ARP Request: %+v", arpReq)
 
 		// build the ethernet packet
 		ethPkt := protocol.NewEthernet()
-		ethPkt.HWDst = intf.HardwareAddr
-		ethPkt.HWSrc = bMac
+		ethPkt.HWDst = bMac
+		ethPkt.HWSrc = arpReq.HWSrc
 		ethPkt.Ethertype = 0x0806
 		ethPkt.Data = arpReq
 
@@ -722,7 +730,30 @@ func (self *OfnetBgp) sendArp() {
 		time.Sleep(1800 * time.Second)
 	}
 }
+*/
 
+func (self *OfnetBgp) sendArp() {
+	time.Sleep(5 * time.Second)
+	for {
+		if self.myBgpPeer == "" {
+			return
+		}
+
+		arpLayer := &libpkt.ArpLayer{
+			SourceProtAddress: self.routerIP,
+			DstProtAddress:    self.myBgpPeer,
+			Operation:         1,
+			SourceHwAddress:   intf.HardwareAddr.String(),
+			DstHwAddress:      "00:00:00:00:00:00",
+		}
+
+		pkt := &libpkt.Packet{SrcMAC: intf.HardwareAddr.String(), DstMAC: "FF:FF:FF:FF:FF:FF",
+			Arp: arpLayer}
+		libpkt.SendPacket(self.agent.ovsDriver, self.vlanIntf, pkt, 1)
+		time.Sleep(1800 * time.Second)
+	}
+
+}
 func (self *OfnetBgp) ModifyProtoRib(path interface{}) {
-		self.modRibCh <- path.(*api.Path)
+	self.modRibCh <- path.(*api.Path)
 }
