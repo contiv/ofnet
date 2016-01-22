@@ -22,7 +22,7 @@ import (
 
 const NUM_MASTER = 2
 const NUM_AGENT = 5
-const NUM_ITER = 4
+const NUM_ITER = 2
 
 var vrtrMasters [NUM_MASTER]*OfnetMaster
 var vxlanMasters [NUM_MASTER]*OfnetMaster
