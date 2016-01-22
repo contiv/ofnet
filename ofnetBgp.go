@@ -30,9 +30,10 @@ import (
 	bgpconf "github.com/osrg/gobgp/config"
 	"github.com/osrg/gobgp/packet"
 	bgpserver "github.com/osrg/gobgp/server"
+	"github.com/shaleman/libOpenflow/openflow13"
+	"github.com/shaleman/libOpenflow/protocol"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/net/context"
-
 	"google.golang.org/grpc"
 )
 
@@ -138,7 +139,6 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 	err = self.agent.ovsDriver.CreatePort("inb01", "internal", 1)
 	if err != nil {
 		log.Errorf("Error creating the port", err)
-		return err
 	}
 
 	cmd := exec.Command("ifconfig", "inb01", routerInfo.RouterIP+"/24")
@@ -311,6 +311,7 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 		return err
 	}
 	self.myBgpPeer = neighborInfo.NeighborIP
+	go self.sendArp()
 
 	return nil
 }
@@ -679,4 +680,49 @@ func setNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
 	neighbor.NeighborConfig.PeerType = bgpconf.PEER_TYPE_EXTERNAL
 	neighbor.Transport.TransportConfig.PassiveMode = false
 	return nil
+}
+
+func (self *OfnetBgp) sendArp() {
+
+	//Get the Mac of the vlan intf
+	//Get the portno of the uplink
+	//Build an arp packet and send on portno of uplink
+	time.Sleep(10 * time.Second)
+	for {
+		intf, _ := net.InterfaceByName(self.vlanIntf)
+		ofPortno, _ := self.agent.ovsDriver.GetOfpPortNo(self.vlanIntf)
+		bMac, _ := net.ParseMAC("FF:FF:FF:FF:FF:FF")
+
+		arpReq, _ := protocol.NewARP(protocol.Type_Request)
+		arpReq.HWSrc = intf.HardwareAddr
+		arpReq.IPSrc = net.ParseIP(self.routerIP)
+		arpReq.HWDst, _ = net.ParseMAC("0")
+		arpReq.IPDst = net.ParseIP(self.myBgpPeer)
+
+		log.Infof("Sending ARP Request: %+v", arpReq)
+
+		// build the ethernet packet
+		ethPkt := protocol.NewEthernet()
+		ethPkt.HWDst = intf.HardwareAddr
+		ethPkt.HWSrc = bMac
+		ethPkt.Ethertype = 0x0806
+		ethPkt.Data = arpReq
+
+		log.Infof("Sending ARP Request Ethernet: %+v", ethPkt)
+
+		// Packet out
+		pktOut := openflow13.NewPacketOut()
+		pktOut.Data = ethPkt
+		pktOut.AddAction(openflow13.NewActionOutput(ofPortno))
+
+		log.Infof("Sending ARP Request packet: %+v", pktOut)
+
+		// Send it out
+		self.agent.ofSwitch.Send(pktOut)
+		time.Sleep(1800 * time.Second)
+	}
+}
+
+func (self *OfnetBgp) ModifyProtoRib(path interface{}) {
+		self.modRibCh <- path.(*api.Path)
 }

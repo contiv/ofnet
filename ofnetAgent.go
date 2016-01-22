@@ -446,10 +446,8 @@ func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string) error {
 			Timestamp:    time.Now(),
 		}
 		self.endpointDb[Gw] = epreg
-		return self.datapath.AddVlan(vlanId, vni)
 	}
-	return nil
-
+	return self.datapath.AddVlan(vlanId, vni)
 }
 
 // Remove a vlan from datapath

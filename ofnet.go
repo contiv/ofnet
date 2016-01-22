@@ -89,6 +89,9 @@ type OfnetProto interface {
 
 	//Delete Local Route
 	DeleteLocalProtoRoute(path *OfnetProtoRouteInfo) error
+
+	//Modify protocol Rib (Could be used for testing)
+	ModifyProtoRib(path interface{})
 }
 
 // Default port numbers

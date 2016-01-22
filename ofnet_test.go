@@ -463,40 +463,6 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 	}
 }
 
-// Wait for debug and cleanup
-func TestWaitAndCleanup(t *testing.T) {
-	time.Sleep(1 * time.Second)
-
-	// Disconnect from switches.
-	for i := 0; i < NUM_AGENT; i++ {
-		vrtrAgents[i].Delete()
-		vxlanAgents[i].Delete()
-	}
-
-	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr1" + fmt.Sprintf("%d", i)
-		log.Infof("Deleting OVS bridge: %s", brName)
-		err := ovsDrivers[i].DeleteBridge(brName)
-		if err != nil {
-			t.Errorf("Error deleting the bridge. Err: %v", err)
-		}
-	}
-	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr2" + fmt.Sprintf("%d", i)
-		log.Infof("Deleting OVS bridge: %s", brName)
-		err := ovsDrivers[i].DeleteBridge(brName)
-		if err != nil {
-			t.Errorf("Error deleting the bridge. Err: %v", err)
-		}
-	}
-	brName := "contivVlanBridge"
-	log.Infof("Deleting OVS bridge: %s", brName)
-	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
-	if err != nil {
-		t.Errorf("Error deleting the bridge. Err: %v", err)
-	}
-}
-
 // Run an ovs-ofctl command
 func runOfctlCmd(cmd, brName string) ([]byte, error) {
 	cmdStr := fmt.Sprintf("sudo /usr/bin/ovs-ofctl -O Openflow13 %s %s", cmd, brName)
@@ -652,7 +618,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	path.Pattrs = append(path.Pattrs, aspath)
 	n, _ := bgp.NewPathAttributeNextHop("50.1.1.2").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
-	vlrtrAgent.modRibCh <- path
+	vlrtrAgent.protopath.ModifyProtoRib(path)
 	log.Infof("Adding path to the Bgp Rib")
 	time.Sleep(2 * time.Second)
 
@@ -674,7 +640,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 
 	// withdraw the route
 	path.IsWithdraw = true
-	vlrtrAgent.modRibCh <- path
+	vlrtrAgent.protopath.ModifyProtoRib(path)
 	log.Infof("Withdrawing route from BGP rib")
 
 	// verify flow entry exists
@@ -718,7 +684,7 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 	if client == nil {
 		t.Errorf("GoBgpApiclient is invalid")
 	}
-	arg := &api.Arguments{Name: vlrtrAgent.myBgpPeer}
+	arg := &api.Arguments{Name: peer}
 
 	//Check if neighbor is added to bgp server
 	bgpPeer, err := client.GetNeighbor(context.Background(), arg)
@@ -741,4 +707,38 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 		return
 	}
 
+}
+
+// Wait for debug and cleanup
+func TestWaitAndCleanup(t *testing.T) {
+	time.Sleep(1 * time.Second)
+
+	// Disconnect from switches.
+	for i := 0; i < NUM_AGENT; i++ {
+		vrtrAgents[i].Delete()
+		vxlanAgents[i].Delete()
+	}
+
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "ovsbr1" + fmt.Sprintf("%d", i)
+		log.Infof("Deleting OVS bridge: %s", brName)
+		err := ovsDrivers[i].DeleteBridge(brName)
+		if err != nil {
+			t.Errorf("Error deleting the bridge. Err: %v", err)
+		}
+	}
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "ovsbr2" + fmt.Sprintf("%d", i)
+		log.Infof("Deleting OVS bridge: %s", brName)
+		err := ovsDrivers[i].DeleteBridge(brName)
+		if err != nil {
+			t.Errorf("Error deleting the bridge. Err: %v", err)
+		}
+	}
+	brName := "contivVlanBridge"
+	log.Infof("Deleting OVS bridge: %s", brName)
+	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
+	if err != nil {
+		t.Errorf("Error deleting the bridge. Err: %v", err)
+	}
 }
