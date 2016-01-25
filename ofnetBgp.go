@@ -15,18 +15,16 @@ limitations under the License.
 package ofnet
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"io"
 	"net"
 	"os/exec"
 	"strconv"
 	"time"
 
-	"container/list"
-	log "github.com/Sirupsen/logrus"
-
-	"github.com/contiv/ofnet/libpkt"
 	api "github.com/osrg/gobgp/api"
 	bgpconf "github.com/osrg/gobgp/config"
 	"github.com/osrg/gobgp/packet"
@@ -684,7 +682,6 @@ func setNeighborConfigValues(neighbor *bgpconf.Neighbor) error {
 	return nil
 }
 
-/*
 func (self *OfnetBgp) sendArp() {
 
 	//Get the Mac of the vlan intf
@@ -701,11 +698,13 @@ func (self *OfnetBgp) sendArp() {
 		bMac, _ := net.ParseMAC("FF:FF:FF:FF:FF:FF")
 		zeroMac, _ := net.ParseMAC("00:00:00:00:00:00")
 
+		srcIP := net.ParseIP(self.routerIP)
+		dstIP := net.ParseIP(self.myBgpPeer)
 		arpReq, _ := protocol.NewARP(protocol.Type_Request)
 		arpReq.HWSrc = intf.HardwareAddr
-		arpReq.IPSrc = net.ParseIP(self.routerIP)
+		arpReq.IPSrc = srcIP
 		arpReq.HWDst = zeroMac
-		arpReq.IPDst = net.ParseIP(self.myBgpPeer)
+		arpReq.IPDst = dstIP
 
 		log.Infof("Sending ARP Request: %+v", arpReq)
 
@@ -730,30 +729,7 @@ func (self *OfnetBgp) sendArp() {
 		time.Sleep(1800 * time.Second)
 	}
 }
-*/
 
-func (self *OfnetBgp) sendArp() {
-	time.Sleep(5 * time.Second)
-	for {
-		if self.myBgpPeer == "" {
-			return
-		}
-
-		arpLayer := &libpkt.ArpLayer{
-			SourceProtAddress: self.routerIP,
-			DstProtAddress:    self.myBgpPeer,
-			Operation:         1,
-			SourceHwAddress:   intf.HardwareAddr.String(),
-			DstHwAddress:      "00:00:00:00:00:00",
-		}
-
-		pkt := &libpkt.Packet{SrcMAC: intf.HardwareAddr.String(), DstMAC: "FF:FF:FF:FF:FF:FF",
-			Arp: arpLayer}
-		libpkt.SendPacket(self.agent.ovsDriver, self.vlanIntf, pkt, 1)
-		time.Sleep(1800 * time.Second)
-	}
-
-}
 func (self *OfnetBgp) ModifyProtoRib(path interface{}) {
 	self.modRibCh <- path.(*api.Path)
 }

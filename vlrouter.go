@@ -31,6 +31,7 @@ import (
 	"errors"
 	"net"
 	"net/rpc"
+	"strings"
 
 	"container/list"
 	log "github.com/Sirupsen/logrus"
@@ -56,9 +57,8 @@ type Vlrouter struct {
 	portVlanFlowDb map[uint32]*ofctrl.Flow // Database of flow entries
 
 	myRouterMac   net.HardwareAddr //Router mac used for external proxy
-	MyBgpPeer     string           // bgp neighbor
+	myBgpPeer     string           // bgp neighbor
 	unresolvedEPs *list.List       // unresolved endpoint list
-
 }
 
 // Create a new vlrouter instance
@@ -270,7 +270,7 @@ func (self *Vlrouter) RemoveVlan(vlanId uint16, vni uint32) error {
 */
 func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 
-	nexthopEp := self.agent.getEndpointByIp(net.ParseIP(self.MyBgpPeer))
+	nexthopEp := self.agent.getEndpointByIp(net.ParseIP(self.myBgpPeer))
 	if nexthopEp != nil && nexthopEp.PortNo != 0 {
 		endpoint.MacAddrStr = nexthopEp.MacAddrStr
 		endpoint.PortNo = nexthopEp.PortNo
@@ -288,7 +288,7 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		}
 	}
 	if endpoint.EndpointType == "external-bgp" {
-		self.MyBgpPeer = endpoint.IpAddr.String()
+		self.myBgpPeer = endpoint.IpAddr.String()
 	}
 	log.Infof("AddEndpoint call for endpoint: %+v", endpoint)
 
@@ -504,6 +504,23 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 			// Send it out
 			self.ofSwitch.Send(pktOut)
+		case protocol.Type_Reply:
+			endpoint := self.agent.getEndpointByIp(arpHdr.IPSrc)
+			if endpoint != nil && endpoint.EndpointType == "external-bgp" {
+				//endpoint exists from where the arp is received.
+				if endpoint.PortNo == 0 {
+					log.Infof("Received ARP from BGP Peer on %s: Mac: %s", endpoint.PortNo, endpoint.MacAddrStr)
+					//learn the mac address and portno for the endpoint
+					self.RemoveEndpoint(endpoint)
+					endpoint.PortNo = inPort
+					endpoint.MacAddrStr = arpHdr.HWSrc.String()
+					self.agent.endpointDb[endpoint.EndpointID] = endpoint
+					self.AddEndpoint(endpoint)
+					self.resolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
+
+				}
+			}
+
 		default:
 			log.Infof("Dropping ARP response packet from port %d", inPort)
 		}
@@ -548,6 +565,9 @@ func (self *Vlrouter) AddUplink(portNo uint32) error {
 	})
 	if err != nil {
 		log.Errorf("Error creating portvlan entry. Err: %v", err)
+		if strings.Contains(err.Error(), "Flow already exists") {
+			return nil
+		}
 		return err
 	}
 
