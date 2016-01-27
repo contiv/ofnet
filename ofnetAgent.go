@@ -117,7 +117,6 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16,
 	// Start listening to controller port
 	go agent.ctrler.Listen(fmt.Sprintf(":%d", ovsPort))
 
-	// Create rpc server
 	// FIXME: Figure out how to handle multiple OVS bridges.
 	rpcServ, listener := rpcHub.NewRpcServer(rpcPort)
 	agent.rpcServ = rpcServ
@@ -305,6 +304,12 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 
 	epId := self.getEndpointId(endpoint)
 
+	// ignore duplicate adds
+	if (self.localEndpointDb[endpoint.PortNo] != nil) &&
+		(self.localEndpointDb[endpoint.PortNo].EndpointID == epId) {
+		return nil
+	}
+
 	// Build endpoint registry info
 	epreg := &OfnetEndpoint{
 		EndpointID:    epId,
@@ -430,6 +435,13 @@ func (self *OfnetAgent) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 // Add a Network.
 // This is mainly used for mapping vlan id to Vxlan VNI and add gateway for network
 func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string) error {
+	// if nothing changed, ignore the message
+	oldVni, ok := self.vlanVniMap[vlanId]
+	if ok && *oldVni == vni {
+		return nil
+	}
+	log.Infof("ofnet Adding Vlan %d. Vni %d", vlanId, vni)
+
 	// store it in DB
 	self.vlanVniMap[vlanId] = &vni
 	self.vniVlanMap[vni] = &vlanId
@@ -458,7 +470,7 @@ func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string) erro
 
 	// make sure there are no endpoints still installed in this vlan
 	for _, endpoint := range self.endpointDb {
-		if endpoint.Vni == vni {
+		if (vni != 0) && (endpoint.Vni == vni) {
 			log.Fatalf("Vlan %d still has routes. Route: %+v", vlanId, endpoint)
 		}
 	}
@@ -468,12 +480,30 @@ func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string) erro
 	return self.datapath.RemoveVlan(vlanId, vni)
 }
 
+// AddUplink adds an uplink to the switch
+func (self *OfnetAgent) AddUplink(portNo uint32) error {
+	// Call the datapath
+	return self.datapath.AddUplink(portNo)
+}
+
+// RemoveUplink remove an uplink to the switch
+func (self *OfnetAgent) RemoveUplink(portNo uint32) error {
+	// Call the datapath
+	return self.datapath.RemoveUplink(portNo)
+}
+
 // Add remote endpoint RPC call from master
 func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 	log.Infof("EndpointAdd rpc call for endpoint: %+v. localIp: %v", epreg, self.localIp)
 
 	// If this is a local endpoint we are done
 	if epreg.OriginatorIp.String() == self.localIp.String() {
+		return nil
+	}
+
+	// switch connection is not up, return
+	if !self.IsSwitchConnected() {
+		log.Warnf("Received EndpointAdd for {%+v} before switch connection was up", epreg)
 		return nil
 	}
 
@@ -494,14 +524,6 @@ func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 
 	// First, add the endpoint to local routing table
 	self.endpointDb[epreg.EndpointID] = epreg
-
-	// Lookup the VTEP for the endpoint
-	vtepPort := self.vtepTable[epreg.OriginatorIp.String()]
-	if vtepPort == nil {
-		log.Errorf("Could not find the VTEP for endpoint: %+v", epreg)
-
-		return errors.New("VTEP not found")
-	}
 
 	// Install the endpoint in datapath
 	err := self.datapath.AddEndpoint(epreg)

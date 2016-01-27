@@ -58,7 +58,6 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 
 	// See if the flow already exists
 	flowKey := flow.flowKey()
-	log.Infof(" new flow key for match: %+v", flowKey)
 
 	if self.flowDb[flowKey] != nil {
 		log.Errorf("Flow %s already exists", flowKey)
