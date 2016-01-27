@@ -212,6 +212,8 @@ func (self *OfnetAgent) WaitForSwitchConnection() {
 			break
 		}
 	}
+
+	log.Fatalf("OVS switch Failed to connect")
 }
 
 // Receive a packet from the switch.
