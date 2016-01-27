@@ -15,7 +15,6 @@ limitations under the License.
 package ofnet
 
 import (
-	"container/list"
 	"errors"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
@@ -47,10 +46,9 @@ type OfnetBgp struct {
 	bgpServer  *bgpserver.BgpServer // bgp server instance
 	grpcServer *bgpserver.Server    // grpc server to talk to gobgp
 
-	myRouterMac   net.HardwareAddr //Router mac used for external proxy
-	myBgpPeer     string           // bgp neighbor
-	unresolvedEPs *list.List       // unresolved endpoint list
-	cc            *grpc.ClientConn //grpc client connection
+	myRouterMac net.HardwareAddr //Router mac used for external proxy
+	myBgpPeer   string           // bgp neighbor
+	cc          *grpc.ClientConn //grpc client connection
 
 }
 
@@ -507,7 +505,13 @@ func (self *OfnetBgp) monitorPeer() error {
 				 2) mark routes pointing to the bgp nexthop as unresolved
 				 3) mark the bgp peer reachbility as unresolved
 			*/
-			for _, endpoint := range self.agent.endpointDb {
+			endpoint := self.agent.getEndpointByIp(net.ParseIP(self.myBgpPeer))
+			self.agent.datapath.RemoveEndpoint(endpoint)
+			endpoint.PortNo = 0
+			self.agent.endpointDb[endpoint.EndpointID] = endpoint
+			self.agent.datapath.AddEndpoint(endpoint)
+
+			for _, endpoint = range self.agent.endpointDb {
 				if endpoint.PortNo == uplink {
 					self.agent.datapath.RemoveEndpoint(endpoint)
 					if endpoint.EndpointType == "internal" {
@@ -518,11 +522,6 @@ func (self *OfnetBgp) monitorPeer() error {
 						self.agent.datapath.AddEndpoint(endpoint)
 					} else if endpoint.EndpointType == "external" {
 						delete(self.agent.endpointDb, endpoint.EndpointID)
-					} else if endpoint.EndpointType == "external-bgp" {
-						// bgp peer endpoint
-						endpoint.PortNo = 0
-						self.agent.endpointDb[endpoint.EndpointID] = endpoint
-						self.agent.datapath.AddEndpoint(endpoint)
 					}
 				}
 			}

@@ -33,7 +33,6 @@ import (
 	"net/rpc"
 	"strings"
 
-	"container/list"
 	log "github.com/Sirupsen/logrus"
 	"github.com/contiv/ofnet/ofctrl"
 	"github.com/shaleman/libOpenflow/openflow13"
@@ -56,9 +55,9 @@ type Vlrouter struct {
 	flowDb         map[string]*ofctrl.Flow // Database of flow entries
 	portVlanFlowDb map[uint32]*ofctrl.Flow // Database of flow entries
 
-	myRouterMac   net.HardwareAddr //Router mac used for external proxy
-	myBgpPeer     string           // bgp neighbor
-	unresolvedEPs *list.List       // unresolved endpoint list
+	myRouterMac   net.HardwareAddr  //Router mac used for external proxy
+	myBgpPeer     string            // bgp neighbor
+	unresolvedEPs map[string]string // unresolved endpoint map
 }
 
 // Create a new vlrouter instance
@@ -75,7 +74,7 @@ func NewVlrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vlrouter {
 	vlrouter.flowDb = make(map[string]*ofctrl.Flow)
 	vlrouter.portVlanFlowDb = make(map[uint32]*ofctrl.Flow)
 	vlrouter.myRouterMac, _ = net.ParseMAC("00:00:11:11:11:11")
-	vlrouter.unresolvedEPs = list.New()
+	vlrouter.unresolvedEPs = make(map[string]string)
 
 	return vlrouter
 }
@@ -282,9 +281,8 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 			//routes that need to be resolved to next hop.
 			// bgp peer resolution happens via ARP and hence not
 			//maintainer in cache.
-			log.Info("Putting in endpoint info to cache")
-			self.unresolvedEPs.PushBack(endpoint.EndpointID)
-			log.Info(self.unresolvedEPs)
+			log.Info("Storing endpoint info in cache")
+			self.unresolvedEPs[endpoint.EndpointID] = endpoint.EndpointID
 		}
 	}
 	if endpoint.EndpointType == "external-bgp" {
@@ -335,6 +333,10 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 
 // RemoveEndpoint removes an endpoint from the datapath
 func (self *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
+
+	//Delete the endpoint if it is in the cache
+	delete(self.unresolvedEPs, endpoint.EndpointID)
+
 	// Find the flow entry
 	ipFlow := self.flowDb[endpoint.IpAddr.String()]
 	if ipFlow == nil {
@@ -540,18 +542,16 @@ over given mac and port*/
 
 func (self *Vlrouter) resolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 
-	for self.unresolvedEPs.Len() > 0 {
-		Element := self.unresolvedEPs.Front()
-		if endpointID, ok := Element.Value.(string); ok {
-			endpoint := self.agent.endpointDb[endpointID]
-			self.RemoveEndpoint(endpoint)
-			endpoint.PortNo = portNo
-			endpoint.MacAddrStr = MacAddrStr
-			self.agent.endpointDb[endpoint.EndpointID] = endpoint
-			self.AddEndpoint(endpoint)
-			self.unresolvedEPs.Remove(Element)
-		}
+	for endpointID, _ := range self.unresolvedEPs {
+		endpoint := self.agent.endpointDb[endpointID]
+		self.RemoveEndpoint(endpoint)
+		endpoint.PortNo = portNo
+		endpoint.MacAddrStr = MacAddrStr
+		self.agent.endpointDb[endpoint.EndpointID] = endpoint
+		self.AddEndpoint(endpoint)
+		delete(self.unresolvedEPs, endpointID)
 	}
+
 }
 
 // AddUplink adds an uplink to the switch
