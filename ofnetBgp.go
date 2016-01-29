@@ -166,9 +166,6 @@ func (self *OfnetBgp) StartProtoServer(routerInfo OfnetProtoRouterInfo) error {
 	fmt.Println(epreg)
 	err = self.agent.datapath.AddLocalEndpoint(*epreg)
 
-	uplink, _ := self.agent.ovsDriver.GetOfpPortNo(self.vlanIntf)
-	self.agent.AddUplink(uplink)
-
 	//Add bgp router id as well
 	bgpGlobalCfg := &bgpconf.Global{}
 	setDefaultGlobalConfigValues(bgpGlobalCfg)

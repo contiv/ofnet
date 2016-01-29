@@ -595,11 +595,3 @@ func (self *OfnetAgent) DeleteLocalProtoRoute(path *OfnetProtoRouteInfo) {
 		self.protopath.DeleteLocalProtoRoute(path)
 	}
 }
-
-func (self *OfnetAgent) AddUplink(portNo uint32) error {
-	return self.datapath.AddUplink(portNo)
-}
-
-func (self *OfnetAgent) RemoveUplink(portNo uint32) error {
-	return self.datapath.RemoveUplink(portNo)
-}

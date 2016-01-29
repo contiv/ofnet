@@ -272,12 +272,3 @@ func (vl *VlanBridge) initFgraph() error {
 	return nil
 }
 
-// AddUplink adds an uplink to the switch
-func (self *VlanBridge) AddUplink(portNo uint32) error {
-	return nil
-}
-
-// RemoveUplink remove an uplink to the switch
-func (self *VlanBridge) RemoveUplink(portNo uint32) error {
-	return nil
-}
