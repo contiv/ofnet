@@ -571,18 +571,38 @@ func (self *OfnetAgent) DummyRpc(arg *string, ret *bool) error {
 }
 
 //AddBgpNeighbors add bgp neighbor
-func (self *OfnetAgent) AddBgpNeighbors(As string, peer string) error {
+func (self *OfnetAgent) AddBgp(routerIP string, As string, neighborAs string, peer string) error {
 
+	log.Infof("Received request add bgp config: RouterIp:%v,As:%v,NeighborAs:%v,PeerIP:%v", routerIP, As, neighborAs, peer)
+	routerInfo := &OfnetProtoRouterInfo{
+		ProtocolType: "bgp",
+		RouterIP:     routerIP,
+		As:           As,
+	}
 	neighborInfo := &OfnetProtoNeighborInfo{
 		ProtocolType: "bgp",
 		NeighborIP:   peer,
-		As:           As,
+		As:           neighborAs,
 	}
-	return self.protopath.AddProtoNeighbor(neighborInfo)
+
+	go self.protopath.StartProtoServer(routerInfo)
+
+	err := self.protopath.AddProtoNeighbor(neighborInfo)
+	if err != nil {
+		log.Errorf("Error adding protocol neighbor")
+		return err
+	}
+	return nil
 }
 
-func (self *OfnetAgent) DeleteBgpNeighbors() error {
-	return self.protopath.DeleteProtoNeighbor()
+func (self *OfnetAgent) DeleteBgp() error {
+	err := self.protopath.DeleteProtoNeighbor()
+	if err != nil {
+		log.Errorf("Error deleting protocol neighbor")
+		return err
+	}
+	self.protopath.StopProtoServer()
+	return nil
 }
 
 func (self *OfnetAgent) GetRouterInfo() *OfnetProtoRouterInfo {
