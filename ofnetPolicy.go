@@ -294,7 +294,7 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 	}
 
 	// Point it to next table
-	if rule.Action == "accept" {
+	if rule.Action == "allow" {
 		err = ruleFlow.Next(self.nextTable)
 		if err != nil {
 			log.Errorf("Error installing flow {%+v}. Err: %v", ruleFlow, err)

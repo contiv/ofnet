@@ -98,7 +98,7 @@ func TestPolicyAddDelete(t *testing.T) {
 		IpProtocol:       6,
 		DstPort:          100,
 		SrcPort:          200,
-		Action:           "accept",
+		Action:           "allow",
 	}
 
 	log.Infof("Adding rule: %+v", tcpRule)
