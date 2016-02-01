@@ -89,10 +89,9 @@ const IP_TBL_ID = 4
 const MAC_DEST_TBL_ID = 5
 
 // Create a new Ofnet agent and initialize it
-/*routerInfo[0] - > IP of the router intf
-  routerInfo[1] -> Uplink nexthop interface
-*/
-func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16,
+/*  routerInfo[0] -> Uplink nexthop interface
+ */
+func NewOfnetAgent(bridgeName string, dpName string, localIp net.IP, rpcPort uint16,
 	ovsPort uint16, routerInfo ...string) (*OfnetAgent, error) {
 	agent := new(OfnetAgent)
 
@@ -138,7 +137,7 @@ func NewOfnetAgent(dpName string, localIp net.IP, rpcPort uint16,
 		agent.datapath = NewVlanBridge(agent, rpcServ)
 	case "vlrouter":
 		agent.datapath = NewVlrouter(agent, rpcServ)
-		agent.ovsDriver = ovsdbDriver.NewOvsDriver("contivVlanBridge")
+		agent.ovsDriver = ovsdbDriver.NewOvsDriver(bridgeName)
 		agent.protopath = NewOfnetBgp(agent, routerInfo)
 
 	default:

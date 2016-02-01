@@ -129,6 +129,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	}
 
 	intfIP := fmt.Sprintf("%s/%d", self.routerIP, len)
+	log.Debugf("Creating inb01 with ", intfIP)
 	cmd := exec.Command("ifconfig", "inb01", intfIP)
 	cmd.Run()
 
@@ -197,11 +198,11 @@ func (self *OfnetBgp) StopProtoServer() error {
 
 	// Delete the endpoint from local routing table
 	epreg := self.agent.getEndpointByIp(net.ParseIP(self.routerIP))
-	delete(self.agent.endpointDb, self.routerIP)
-	delete(self.agent.localEndpointDb, epreg.PortNo)
-	fmt.Println(epreg)
-	err = self.agent.datapath.RemoveLocalEndpoint(*epreg)
-
+	if epreg != nil {
+		delete(self.agent.endpointDb, self.routerIP)
+		delete(self.agent.localEndpointDb, epreg.PortNo)
+		err = self.agent.datapath.RemoveLocalEndpoint(*epreg)
+	}
 	self.routerIP = ""
 	self.myBgpAs = 0
 	self.stop <- 1
@@ -442,17 +443,20 @@ func (self *OfnetBgp) DeleteLocalProtoRoute(pathInfo *OfnetProtoRouteInfo) error
 		log.Errorf("Fail to enforce Modpathi", err)
 		return err
 	}
+
 	err = stream.Send(arg)
 	if err != nil {
 		log.Errorf("Failed to send strean", err)
 		return err
 	}
 	stream.CloseSend()
+
 	res, e := stream.CloseAndRecv()
 	if e != nil {
 		log.Errorf("Falied toclose stream ")
 		return e
 	}
+
 	if res.Code != api.Error_SUCCESS {
 		return fmt.Errorf("error: code: %d, msg: %s", res.Code, res.Msg)
 	}
