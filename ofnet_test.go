@@ -21,7 +21,7 @@ import (
 )
 
 const NUM_MASTER = 2
-const NUM_AGENT = 5
+const NUM_AGENT = 3
 const NUM_ITER = 2
 
 var vrtrMasters [NUM_MASTER]*OfnetMaster
@@ -32,7 +32,6 @@ var ovsDrivers [NUM_AGENT * 3]*ovsdbDriver.OvsDriver
 var vlrtrAgent *OfnetAgent
 var vlrtrMaster *OfnetMaster
 
-//var localIpList []string = []string{"10.10.10.1", "10.10.10.2", "10.10.10.3", "10.10.10.4"}
 var localIpList []string
 
 // Create couple of ofnet masters and few agents
@@ -102,20 +101,6 @@ func TestMain(m *testing.M) {
 		log.Infof("Created vxlan ofnet agent: %v", vxlanAgents[i])
 	}
 
-	// Create agent
-	rpcPort := uint16(9551)
-	ovsPort := uint16(9561)
-	lclIp := net.ParseIP(localIpList[0])
-	vlrtrAgent, err = NewOfnetAgent("vlrouter", lclIp, rpcPort, ovsPort, "50.1.1.1", "inb01")
-	if err != nil {
-		log.Fatalf("Error creating ofnet agent. Err: %v", err)
-	}
-
-	// Override MyAddr to local host
-	vlrtrAgent.MyAddr = "127.0.0.1"
-
-	log.Infof("Created vlrouter ofnet agent: %v", vlrtrAgent)
-
 	masterInfo := OfnetNode{
 		HostAddr: "127.0.0.1",
 	}
@@ -141,8 +126,29 @@ func TestMain(m *testing.M) {
 
 		}
 	}
-	// connect vrtr agent to vrtr master
 
+	// Create agent
+	rpcPort := uint16(9551)
+	ovsPort := uint16(9561)
+	brName := "vlrouterBridge"
+	lclIp := net.ParseIP(localIpList[0])
+	vlrtrAgent, err = NewOfnetAgent("vlrouter", lclIp, rpcPort, ovsPort, "50.1.1.1", "inb01")
+	if err != nil {
+		log.Fatalf("Error creating ofnet agent. Err: %v", err)
+	}
+
+	// Override MyAddr to local host
+	vlrtrAgent.MyAddr = "127.0.0.1"
+
+	log.Infof("Created vlrouter ofnet agent: %v", vlrtrAgent)
+
+	ovsDrivers[2*NUM_AGENT] = ovsdbDriver.NewOvsDriver(brName)
+	err = ovsDrivers[2*NUM_AGENT].AddController("127.0.0.1", ovsPort)
+	if err != nil {
+		log.Fatalf("Error adding controller to ovs: %s", brName)
+	}
+
+	// connect vlrtr agent to vrtr master
 	masterInfo.HostPort = uint16(9501)
 	err = vlrtrAgent.AddMaster(&masterInfo, &resp)
 	if err != nil {
@@ -192,14 +198,6 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			log.Fatalf("Error adding controller to ovs: %s", brName)
 		}
-	}
-
-	brName := "contivVlanBridge"
-	ovsPort = uint16(9561)
-	ovsDrivers[2*NUM_AGENT] = ovsdbDriver.NewOvsDriver(brName)
-	err = ovsDrivers[2*NUM_AGENT].AddController("127.0.0.1", ovsPort)
-	if err != nil {
-		log.Fatalf("Error adding controller to ovs: %s", brName)
 	}
 
 	// Wait for 20sec for switch to connect to controller
@@ -546,7 +544,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	log.Infof("Finished adding local vlrouter endpoint")
 
 	// verify all ovs switches have this route
-	brName := "contivVlanBridge"
+	brName := "vlrouterBridge"
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
@@ -586,7 +584,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	log.Infof("Deleted endpoints. Verifying they are gone")
 
 	// verify flows are deleted
-	brName = "contivVlanBridge"
+	brName = "vlrouterBridge"
 
 	flowList, err = ofctlFlowDump(brName)
 	if err != nil {
@@ -623,7 +621,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// verify flow entry exists
-	brName := "contivVlanBridge"
+	brName := "vlrouterBridge"
 
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
@@ -644,7 +642,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	log.Infof("Withdrawing route from BGP rib")
 
 	// verify flow entry exists
-	brName = "contivVlanBridge"
+	brName = "vlrouterBridge"
 
 	flowList, err = ofctlFlowDump(brName)
 	if err != nil {
@@ -735,7 +733,7 @@ func TestWaitAndCleanup(t *testing.T) {
 			t.Errorf("Error deleting the bridge. Err: %v", err)
 		}
 	}
-	brName := "contivVlanBridge"
+	brName := "vlrouterBridge"
 	log.Infof("Deleting OVS bridge: %s", brName)
 	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
 	if err != nil {

@@ -23,5 +23,5 @@ host-build:
 	godep go install ./ ./ofctrl
 
 host-test:
-	godep go test -v ./
-	godep go test -v ./ofctrl
+	sudo -E PATH=$(PATH) /opt/gopath/bin/godep go test -v ./
+	sudo -E PATH=$(PATH) /opt/gopath/bin/godep go test -v ./ofctrl
