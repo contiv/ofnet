@@ -131,9 +131,9 @@ func TestMain(m *testing.M) {
 	ovsPort := uint16(9561)
 	brName := "vlrouterBridge"
 	lclIp := net.ParseIP(localIpList[0])
-	driver := ovsdbDriver.NewOvsDriver("contivVlanBridge")
+	driver := ovsdbDriver.NewOvsDriver(brName)
 	driver.CreatePort("inb02", "internal", 1)
-	vlrtrAgent, err = NewOfnetAgent("contivVlanBridge", "vlrouter", lclIp, rpcPort, ovsPort, "inb02")
+	vlrtrAgent, err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, "inb02")
 	if err != nil {
 		log.Fatalf("Error creating ofnet agent. Err: %v", err)
 	}
@@ -526,7 +526,6 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 	//Add Bgp neighbor and check if it is successful
 
 	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
-	time.Sleep(5 * time.Second)
 	if err != nil {
 		t.Errorf("Error adding Bgp Neighbor", err)
 		return
@@ -564,12 +563,10 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 		t.Errorf("Neighbor is not deleted ", err)
 		return
 	}
-	time.Sleep(5 * time.Second)
 }
 
 // Test adding/deleting Vlrouter routes
 func TestOfnetVlrouteAddDelete(t *testing.T) {
-
 	neighborAs := "500"
 	peer := "50.1.1.2"
 	routerIP := "50.1.1.1/24"
@@ -577,7 +574,6 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	//Add Bgp neighbor and check if it is successful
 
 	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
-	time.Sleep(5 * time.Second)
 	if err != nil {
 		t.Errorf("Error adding Bgp Neighbor", err)
 		return
@@ -663,7 +659,6 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	}
 	err = vlrtrAgent.DeleteBgp()
 	log.Infof("Verified all flows are deleted")
-	time.Sleep(5 * time.Second)
 }
 
 // Test adding/deleting Vlrouter routes
@@ -733,7 +728,6 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		return
 	}
 	log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
-
 }
 
 // Wait for debug and cleanup
