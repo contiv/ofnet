@@ -121,7 +121,7 @@ func (self *OFSwitch) receive() {
 			// stream.
 			self.handleMessages(self.dpid, msg)
 		case err := <-self.stream.Error:
-			log.Errorf("Received error message from switch %v. Err: %v", self.dpid, err)
+			log.Warnf("Received ERROR message from switch %v. Err: %v", self.dpid, err)
 
 			// send Switch disconnected callback
 			self.switchDisconnected()

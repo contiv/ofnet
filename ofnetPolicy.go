@@ -306,6 +306,9 @@ func (self *PolicyAgent) AddRule(rule *OfnetPolicyRule, ret *bool) error {
 			log.Errorf("Error installing flow {%+v}. Err: %v", ruleFlow, err)
 			return err
 		}
+	} else {
+		log.Errorf("Unknown action in rule {%+v}", rule)
+		return errors.New("Unknown action in rule")
 	}
 
 	// save the rule
