@@ -20,9 +20,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"io"
 	"net"
-	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	api "github.com/osrg/gobgp/api"
@@ -37,6 +37,7 @@ import (
 )
 
 type OfnetBgp struct {
+	sync.Mutex
 	routerIP string      // virtual interface ip for bgp
 	vlanIntf string      // uplink port name
 	agent    *OfnetAgent // Pointer back to ofnet agent that owns this
@@ -51,7 +52,9 @@ type OfnetBgp struct {
 	myBgpPeer   string           // bgp neighbor
 	myBgpAs     uint32
 	cc          *grpc.ClientConn //grpc client connection
-	stop        chan int
+	stop        chan bool
+	start       chan bool
+	intfName    string //loopback intf to run bgp
 }
 
 // Create a new vlrouter instance
@@ -78,7 +81,9 @@ func NewOfnetBgp(agent *OfnetAgent, routerInfo []string) *OfnetBgp {
 		log.Errorf("Error instantiating Bgp server")
 		return nil
 	}
-	ofnetBgp.stop = make(chan int, 1)
+	ofnetBgp.stop = make(chan bool, 1)
+	ofnetBgp.intfName = "inb01"
+	ofnetBgp.start = make(chan bool, 1)
 	return ofnetBgp
 }
 
@@ -123,23 +128,33 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_INCOMPLETE).Serialize()
 	path.Pattrs = append(path.Pattrs, origin)
 
-	err = self.agent.ovsDriver.CreatePort("inb01", "internal", 1)
+	log.Debugf("Creating the loopback port ")
+	err = self.agent.ovsDriver.CreatePort(self.intfName, "internal", 1)
 	if err != nil {
 		log.Errorf("Error creating the port", err)
 	}
 
 	intfIP := fmt.Sprintf("%s/%d", self.routerIP, len)
 	log.Debugf("Creating inb01 with ", intfIP)
-	cmd := exec.Command("ifconfig", "inb01", intfIP)
-	cmd.Run()
+	ofPortno, _ := self.agent.ovsDriver.GetOfpPortNo(self.intfName)
 
-	intf, _ := net.InterfaceByName("inb01")
-	ofPortno, _ := self.agent.ovsDriver.GetOfpPortNo("inb01")
+	link, err := netlink.LinkByName(self.intfName)
+	if err != nil {
+		log.Errorf("error finding link by name %v", self.intfName)
+		return err
+	}
+	linkIP, err := netlink.ParseAddr(intfIP)
+	if err != nil {
+		log.Errorf("invalid ip ", intfIP)
+	}
+	netlink.AddrAdd(link, linkIP)
 
-	if intf == nil || ofPortno == 0 {
-		log.Errorf("Error fetching inb01 information", intf, ofPortno)
+	if link == nil || ofPortno == 0 {
+		log.Errorf("Error fetching %v information", self.intfName, link, ofPortno)
 		return errors.New("Unable to fetch inb01 info")
 	}
+
+	intf, _ := net.InterfaceByName(self.intfName)
 
 	epreg := &OfnetEndpoint{
 		EndpointID:   self.routerIP,
@@ -172,7 +187,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	go self.monitorBest()
 	//monitor peer state
 	go self.monitorPeer()
-
+	self.start <- true
 	for {
 		select {
 		case p := <-self.modRibCh:
@@ -188,9 +203,8 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 }
 func (self *OfnetBgp) StopProtoServer() error {
 
-	defer self.cc.Close()
-
-	err := self.agent.ovsDriver.DeletePort("inb01")
+	log.Info("Received stop bgp server")
+	err := self.agent.ovsDriver.DeletePort(self.intfName)
 	if err != nil {
 		log.Errorf("Error deleting the port", err)
 		return err
@@ -205,7 +219,7 @@ func (self *OfnetBgp) StopProtoServer() error {
 	}
 	self.routerIP = ""
 	self.myBgpAs = 0
-	self.stop <- 1
+	self.stop <- true
 	return nil
 }
 
@@ -273,6 +287,8 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 
 //AddProtoNeighbor adds bgp neighbor
 func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) error {
+
+	<-self.start
 
 	log.Infof("Received AddProtoNeighbor to Add bgp neighbor %v", neighborInfo.NeighborIP)
 

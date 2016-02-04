@@ -249,12 +249,13 @@ func (self *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	}
 
 	// Remove the endpoint from policy tables
-	err = self.policyAgent.DelEndpoint(&endpoint)
-	if err != nil {
-		log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
-		return err
+	if endpoint.EndpointType != "internal-bgp" {
+		err = self.policyAgent.DelEndpoint(&endpoint)
+		if err != nil {
+			log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+			return err
+		}
 	}
-
 	path := &OfnetProtoRouteInfo{
 		ProtocolType: "bgp",
 		localEpIP:    endpoint.IpAddr.String(),
