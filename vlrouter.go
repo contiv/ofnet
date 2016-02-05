@@ -346,10 +346,12 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	}
 
 	// Install dst group entry for the endpoint
-	err = self.policyAgent.AddEndpoint(endpoint)
-	if err != nil {
-		log.Errorf("Error adding endpoint to policy agent{%+v}. Err: %v", endpoint, err)
-		return err
+	if endpoint.EndpointType == "internal" {
+		err = self.policyAgent.AddEndpoint(endpoint)
+		if err != nil {
+			log.Errorf("Error adding endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+			return err
+		}
 	}
 	// Store it in flow db
 	self.flowDb[endpoint.IpAddr.String()] = ipFlow
@@ -377,10 +379,12 @@ func (self *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 	}
 
 	//Remove the endpoint from policy tables
-	err = self.policyAgent.DelEndpoint(endpoint)
-	if err != nil {
-		log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
-		return err
+	if endpoint.EndpointType == "internal" {
+		err = self.policyAgent.DelEndpoint(endpoint)
+		if err != nil {
+			log.Errorf("Error deleting endpoint to policy agent{%+v}. Err: %v", endpoint, err)
+			return err
+		}
 	}
 
 	return nil
