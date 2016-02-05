@@ -74,7 +74,7 @@ func TestMain(m *testing.M) {
 		rpcPort := uint16(9101 + i)
 		ovsPort := uint16(9151 + i)
 		lclIp := net.ParseIP(localIpList[i])
-		vrtrAgents[i], err = NewOfnetAgent("vrouter", lclIp, rpcPort, ovsPort)
+		vrtrAgents[i], err = NewOfnetAgent("", "vrouter", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 		ovsPort := uint16(9251 + i)
 		lclIp := net.ParseIP(localIpList[i])
 
-		vxlanAgents[i], err = NewOfnetAgent("vxlan", lclIp, rpcPort, ovsPort)
+		vxlanAgents[i], err = NewOfnetAgent("", "vxlan", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -100,7 +100,6 @@ func TestMain(m *testing.M) {
 
 		log.Infof("Created vxlan ofnet agent: %v", vxlanAgents[i])
 	}
-
 	masterInfo := OfnetNode{
 		HostAddr: "127.0.0.1",
 	}
@@ -132,7 +131,9 @@ func TestMain(m *testing.M) {
 	ovsPort := uint16(9561)
 	brName := "vlrouterBridge"
 	lclIp := net.ParseIP(localIpList[0])
-	vlrtrAgent, err = NewOfnetAgent("vlrouter", lclIp, rpcPort, ovsPort, "50.1.1.1", "inb01")
+	driver := ovsdbDriver.NewOvsDriver(brName)
+	driver.CreatePort("inb02", "internal", 1)
+	vlrtrAgent, err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, "inb02")
 	if err != nil {
 		log.Fatalf("Error creating ofnet agent. Err: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Wait for 20sec for switch to connect to controller
-	time.Sleep(20 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	err = SetupVlans()
 	if err != nil {
@@ -516,8 +517,67 @@ func ofctlFlowMatch(flowList []string, tableId int, matchStr string) bool {
 	return false
 }
 
+func TestOfnetBgpPeerAddDelete(t *testing.T) {
+
+	neighborAs := "500"
+	peer := "50.1.1.2"
+	routerIP := "50.1.1.1/24"
+	as := "65002"
+	//Add Bgp neighbor and check if it is successful
+
+	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
+	if err != nil {
+		t.Errorf("Error adding Bgp Neighbor", err)
+		return
+	}
+
+	timeout := grpc.WithTimeout(time.Second)
+	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := api.NewGobgpApiClient(conn)
+	if client == nil {
+		t.Errorf("GoBgpApiclient is invalid")
+	}
+	arg := &api.Arguments{Name: peer}
+
+	//Check if neighbor is added to bgp server
+	bgpPeer, err := client.GetNeighbor(context.Background(), arg)
+	if err != nil {
+		t.Errorf("GetNeighbor failed ", err)
+		return
+	}
+
+	//Delete BGP neighbor
+	err = vlrtrAgent.DeleteBgp()
+	if err != nil {
+		t.Errorf("Error Deleting Bgp Neighbor", err)
+		return
+	}
+
+	//Check if neighbor is added to bgp server
+	bgpPeer, err = client.GetNeighbor(context.Background(), arg)
+	if bgpPeer != nil {
+		t.Errorf("Neighbor is not deleted ", err)
+		return
+	}
+}
+
 // Test adding/deleting Vlrouter routes
 func TestOfnetVlrouteAddDelete(t *testing.T) {
+	neighborAs := "500"
+	peer := "50.1.1.2"
+	routerIP := "50.1.1.1/24"
+	as := "65002"
+	//Add Bgp neighbor and check if it is successful
+
+	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
+	if err != nil {
+		t.Errorf("Error adding Bgp Neighbor", err)
+		return
+	}
 
 	macAddr, _ := net.ParseMAC("02:02:01:06:06:06")
 	ipAddr := net.ParseIP("20.20.20.20")
@@ -529,7 +589,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	}
 
 	log.Infof("Installing local vlrouter endpoint: %+v", endpoint)
-	err := vlrtrAgent.AddNetwork(uint16(1), uint32(1), "20.20.20.254")
+	err = vlrtrAgent.AddNetwork(uint16(1), uint32(1), "20.20.20.254")
 	if err != nil {
 		t.Errorf("Error adding vlan 1 . Err: %v", err)
 	}
@@ -597,13 +657,25 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 		t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
 	}
-
+	err = vlrtrAgent.DeleteBgp()
 	log.Infof("Verified all flows are deleted")
 }
 
 // Test adding/deleting Vlrouter routes
 func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 
+	neighborAs := "500"
+	peer := "50.1.1.3"
+	routerIP := "50.1.1.2/24"
+	as := "65002"
+	//Add Bgp neighbor and check if it is successful
+
+	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
+	time.Sleep(5 * time.Second)
+	if err != nil {
+		t.Errorf("Error adding Bgp Neighbor", err)
+		return
+	}
 	path := &api.Path{
 		Pattrs: make([][]byte, 0),
 	}
@@ -614,7 +686,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
 	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
 	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop("50.1.1.2").Serialize()
+	n, _ := bgp.NewPathAttributeNextHop("50.1.1.3").Serialize()
 	path.Pattrs = append(path.Pattrs, n)
 	vlrtrAgent.protopath.ModifyProtoRib(path)
 	log.Infof("Adding path to the Bgp Rib")
@@ -656,55 +728,6 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		return
 	}
 	log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
-
-}
-
-func TestOfnetBgpPeerAddDelete(t *testing.T) {
-
-	as := "500"
-	peer := "50.1.1.2"
-
-	//Add Bgp neighbor and check if it is successful
-
-	err := vlrtrAgent.AddBgpNeighbors(as, peer)
-	if err != nil {
-		t.Errorf("Error adding Bgp Neighbor", err)
-		return
-	}
-
-	timeout := grpc.WithTimeout(time.Second)
-	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	client := api.NewGobgpApiClient(conn)
-	if client == nil {
-		t.Errorf("GoBgpApiclient is invalid")
-	}
-	arg := &api.Arguments{Name: peer}
-
-	//Check if neighbor is added to bgp server
-	bgpPeer, err := client.GetNeighbor(context.Background(), arg)
-	if err != nil {
-		t.Errorf("GetNeighbor failed ", err)
-		return
-	}
-
-	//Delete BGP neighbor
-	err = vlrtrAgent.DeleteBgpNeighbors()
-	if err != nil {
-		t.Errorf("Error Deleting Bgp Neighbor", err)
-		return
-	}
-
-	//Check if neighbor is added to bgp server
-	bgpPeer, err = client.GetNeighbor(context.Background(), arg)
-	if bgpPeer != nil {
-		t.Errorf("Neighbor is not deleted ", err)
-		return
-	}
-
 }
 
 // Wait for debug and cleanup
