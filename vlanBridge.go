@@ -21,6 +21,8 @@ import (
 	"net/rpc"
 
 	"github.com/contiv/ofnet/ofctrl"
+	"github.com/shaleman/libOpenflow/openflow13"
+	"github.com/shaleman/libOpenflow/protocol"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -86,7 +88,21 @@ func (vl *VlanBridge) SwitchDisconnected(sw *ofctrl.OFSwitch) {
 
 // PacketRcvd Handle incoming packet
 func (vl *VlanBridge) PacketRcvd(sw *ofctrl.OFSwitch, pkt *ofctrl.PacketIn) {
-	// Ignore all incoming packets for now
+	switch pkt.Data.Ethertype {
+	case 0x0806:
+		if (pkt.Match.Type == openflow13.MatchType_OXM) &&
+			(pkt.Match.Fields[0].Class == openflow13.OXM_CLASS_OPENFLOW_BASIC) &&
+			(pkt.Match.Fields[0].Field == openflow13.OXM_FIELD_IN_PORT) {
+			// Get the input port number
+			switch t := pkt.Match.Fields[0].Value.(type) {
+			case *openflow13.InPortField:
+				var inPortFld openflow13.InPortField
+				inPortFld = *t
+
+				vl.processArp(pkt.Data, inPortFld.InPort)
+			}
+		}
+	}
 }
 
 // AddLocalEndpoint Add a local endpoint and install associated local route
@@ -277,6 +293,14 @@ func (vl *VlanBridge) initFgraph() error {
 	})
 	vlanMissFlow.Next(sw.DropAction())
 
+	// Redirect ARP Request packets to controller
+	arpFlow, _ := vl.inputTable.NewFlow(ofctrl.FlowMatch{
+		Priority:  FLOW_MATCH_PRIORITY,
+		Ethertype: 0x0806,
+		ArpOper:   protocol.Type_Request,
+	})
+	arpFlow.Next(sw.SendToController())
+
 	// All packets that have gone thru policy lookup go thru normal OVS switching
 	normalLookupFlow, _ := vl.nmlTable.NewFlow(ofctrl.FlowMatch{
 		Priority: FLOW_MISS_PRIORITY,
@@ -287,3 +311,85 @@ func (vl *VlanBridge) initFgraph() error {
 	return nil
 }
 
+// Process incoming ARP packets
+func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
+	switch t := pkt.Data.(type) {
+	case *protocol.ARP:
+		log.Debugf("Processing ARP packet on port: %+v", *t, inPort)
+		var arpIn protocol.ARP = *t
+
+		switch arpIn.Operation {
+		case protocol.Type_Request:
+			// Lookup the Dest IP in the endpoint table
+			endpoint := vl.agent.getEndpointByIp(arpIn.IPDst)
+			if endpoint == nil {
+				// If we dont know the IP address, dont send an ARP response
+				log.Infof("Received ARP request for unknown IP: %v. Inject the packet back", arpIn.IPDst)
+				ethPkt := protocol.NewEthernet()
+				ethPkt.HWDst = pkt.HWDst
+				ethPkt.HWSrc = pkt.HWSrc
+				ethPkt.Ethertype = 0x0806
+				ethPkt.Data = &arpIn
+
+				log.Debugf("Reinjecting ARP request Ethernet: %+v", ethPkt)
+
+				// Packet out
+				pktOut := openflow13.NewPacketOut()
+				pktOut.InPort = inPort
+				pktOut.Data = ethPkt
+				pktOut.AddAction(openflow13.NewActionOutput(openflow13.P_NORMAL))
+
+				// Send it out
+				vl.ofSwitch.Send(pktOut)
+
+				return
+			}
+
+			// Form an ARP response
+			arpPkt, _ := protocol.NewARP(protocol.Type_Reply)
+			arpPkt.HWSrc, _ = net.ParseMAC(endpoint.MacAddrStr)
+			arpPkt.IPSrc = arpIn.IPDst
+			arpPkt.HWDst = arpIn.HWSrc
+			arpPkt.IPDst = arpIn.IPSrc
+
+			log.Debugf("Sending Proxy ARP response: %+v", arpPkt)
+
+			// build the ethernet packet
+			ethPkt := protocol.NewEthernet()
+			ethPkt.HWDst = arpPkt.HWDst
+			ethPkt.HWSrc = arpPkt.HWSrc
+			ethPkt.Ethertype = 0x0806
+			ethPkt.Data = arpPkt
+
+			log.Debugf("Sending Proxy ARP response Ethernet: %+v", ethPkt)
+
+			// Packet out
+			pktOut := openflow13.NewPacketOut()
+			pktOut.Data = ethPkt
+			pktOut.AddAction(openflow13.NewActionOutput(inPort))
+
+			// Send it out
+			vl.ofSwitch.Send(pktOut)
+		case protocol.Type_Reply:
+			log.Debugf("Received ARP response packet: %+v from port %d", arpIn, inPort)
+
+			ethPkt := protocol.NewEthernet()
+			ethPkt.VLANID = pkt.VLANID
+			ethPkt.HWDst = pkt.HWDst
+			ethPkt.HWSrc = pkt.HWSrc
+			ethPkt.Ethertype = 0x0806
+			ethPkt.Data = &arpIn
+			log.Debugf("Sending ARP response Ethernet: %+v", ethPkt)
+
+			// Packet out
+			pktOut := openflow13.NewPacketOut()
+			pktOut.InPort = inPort
+			pktOut.Data = ethPkt
+			pktOut.AddAction(openflow13.NewActionOutput(openflow13.P_NORMAL))
+
+			log.Debugf("Reinjecting ARP reply packet: %+v", pktOut)
+			// Send it out
+			vl.ofSwitch.Send(pktOut)
+		}
+	}
+}
