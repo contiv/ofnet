@@ -219,29 +219,30 @@ func (svcOp *proxyOper)addProvHdl(provIP string) {
 	svcOp.provPQ.PushItem(item)
 }
 
-func (proxy *ServiceProxy)addService(svcName string) {
+func (proxy *ServiceProxy)addService(svcName string) error {
 	// make sure we have a spec and at least one provider
 	services := proxy.catalogue.svcMap
 	spec, found := services[svcName]
 	if !found {
 		log.Debugf("No spec for %s", svcName)
-		return
+		return nil
 	}
 
 	providers := proxy.catalogue.provMap
 	prov, found := providers[svcName]
 	if !found {
 		log.Debugf("No providers for %s", svcName)
-		return
+		return nil
 	}
 
 	// Build operational state
 	oper := proxy.operState
 	proxy.oMutex.Lock()
 	defer proxy.oMutex.Unlock()
-	_, found = oper[svcName]
+	_, found = oper[spec.IpAddress]
 	if found {
-		log.Warnf("Unexpected... operstate found for %s", svcName)
+		log.Errorf("Unexpected... operstate found for %s", spec.IpAddress)
+		return errors.New("Service IP already exists")
 	}
 
 	wFlows := make([]*ofctrl.Flow, watchedFlowMax) 
@@ -278,18 +279,25 @@ func (proxy *ServiceProxy)addService(svcName string) {
 				log.Errorf("Flow count exceeded")
 				break
 			}
-	        	watchedFlow, _ := proxy.dNATTable.NewFlow(ofctrl.FlowMatch{
+	        	watchedFlow, err := proxy.dNATTable.NewFlow(ofctrl.FlowMatch{
        		         	Priority: FLOW_FLOOD_PRIORITY,
 				Ethertype: 0x0800,
 				IpDa: &svcDA,
 				IpProto: prot,
 		        	})
+			if err != nil {
+				log.Errorf("Watch %s proto: %d err: %v", spec.IpAddress,
+					prot, err)
+				continue;
+			}
        		 	watchedFlow.Next(proxy.ofSwitch.SendToController())
 			oState.watchedFlows[count] = watchedFlow
 			delete(protMap, port.Protocol) // add only once
 			count++
 		}
 	}
+
+	return nil
 }
 
 // delService deletes a service
@@ -356,21 +364,23 @@ func (proxy *ServiceProxy)AddSvcSpec(svcName string, spec *ServiceSpec) error {
 	}
 
 	services[svcName] = *spec
-	proxy.addService(svcName)	
-	return nil
+	return proxy.addService(svcName)	
 }
 
 // DelSvcSpec deletes a service spec.
-func (proxy *ServiceProxy)DelSvcSpec(svcName string, spec *ServiceSpec) {
+func (proxy *ServiceProxy)DelSvcSpec(svcName string, spec *ServiceSpec) error {
 	log.Infof("DelSvcSpec %s %v", svcName, spec)
 	services := proxy.catalogue.svcMap
 	_, found := services[svcName]
 	if !found {
 		log.Warnf("DelSvcSpec service %s not found", svcName)
+                return errors.New("Service not found")
 	} else {
 		proxy.delService(svcName)
 		delete(services, svcName)
 	}
+
+	return nil
 }
 
 // addProvider adds the given provider to operational State
@@ -448,7 +458,10 @@ func (proxy *ServiceProxy)ProviderUpdate(svcName string, providers []string) {
 
 	if !found {
 		proxy.catalogue.provMap[svcName] = pMap
-		proxy.addService(svcName)
+		err := proxy.addService(svcName)
+		if err != nil {
+			log.Errorf("ProviderUpdate failed for %s", svcName)
+		}
 		return
 	}
 

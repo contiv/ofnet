@@ -420,8 +420,8 @@ func (vr *Vrouter) AddSvcSpec(svcName string, spec *ServiceSpec) error {
 }
 
 // DelSvcSpec removes a service spec from proxy
-func (vr *Vrouter) DelSvcSpec(svcName string, spec *ServiceSpec) {
-	vr.svcProxy.DelSvcSpec(svcName, spec)
+func (vr *Vrouter) DelSvcSpec(svcName string, spec *ServiceSpec) error {
+	return vr.svcProxy.DelSvcSpec(svcName, spec)
 }
 
 // SvcProviderUpdate Service Proxy Back End update

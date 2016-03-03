@@ -72,7 +72,7 @@ type OfnetDatapath interface {
 	AddSvcSpec(svcName string, spec *ServiceSpec) error
 
 	// Remove a service spec from proxy
-	DelSvcSpec(svcName string, spec *ServiceSpec)
+	DelSvcSpec(svcName string, spec *ServiceSpec) error
 
 	// Service Proxy Back End update
 	SvcProviderUpdate(svcName string, providers []string)

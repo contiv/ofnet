@@ -506,8 +506,8 @@ func (self *OfnetAgent) AddSvcSpec(svcName string, spec *ServiceSpec) error {
 }
 
 // DelSvcSpec removes a service spec from proxy
-func (self *OfnetAgent) DelSvcSpec(svcName string, spec *ServiceSpec) {
-        self.datapath.DelSvcSpec(svcName, spec)
+func (self *OfnetAgent) DelSvcSpec(svcName string, spec *ServiceSpec) error {
+        return self.datapath.DelSvcSpec(svcName, spec)
 }
 
 // SvcProviderUpdate Service Proxy Back End update

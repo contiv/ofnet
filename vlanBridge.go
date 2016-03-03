@@ -238,7 +238,8 @@ func (vl *VlanBridge) AddSvcSpec(svcName string, spec *ServiceSpec) error {
 }
 
 // DelSvcSpec removes a service spec from proxy
-func (vl *VlanBridge) DelSvcSpec(svcName string, spec *ServiceSpec) {
+func (vl *VlanBridge) DelSvcSpec(svcName string, spec *ServiceSpec) error {
+        return nil
 }
 
 // SvcProviderUpdate Service Proxy Back End update

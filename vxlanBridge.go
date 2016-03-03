@@ -571,7 +571,8 @@ func (vx *Vxlan) AddSvcSpec(svcName string, spec *ServiceSpec) error {
 }
 
 // DelSvcSpec removes a service spec from proxy
-func (vx *Vxlan) DelSvcSpec(svcName string, spec *ServiceSpec) {
+func (vx *Vxlan) DelSvcSpec(svcName string, spec *ServiceSpec) error {
+        return nil
 }
 
 // SvcProviderUpdate Service Proxy Back End update
