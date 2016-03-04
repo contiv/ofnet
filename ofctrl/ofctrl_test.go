@@ -49,7 +49,7 @@ func (o *OfActor) SwitchConnected(sw *OFSwitch) {
 }
 
 func (o *OfActor) SwitchDisconnected(sw *OFSwitch) {
-	log.Printf("App: Switch connected: %v", sw.DPID())
+	log.Printf("App: Switch disconnected: %v", sw.DPID())
 }
 
 var ofActor OfActor
@@ -173,7 +173,7 @@ func TestTableCreateDelete(t *testing.T) {
 	log.Infof("Deleting tables..")
 
 	// delete the tables
-	for i := 2; i < 10; i++ {
+	for i := 2; i < 12; i++ {
 		err := tables[i].Delete()
 		if err != nil {
 			t.Errorf("Error deleting table: %d", i)

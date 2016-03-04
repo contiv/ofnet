@@ -24,13 +24,36 @@ const NUM_MASTER = 2
 const NUM_AGENT = 3
 const NUM_ITER = 2
 
+/* NOTE:
+ * Currently only one vlrouter Master is supported
+ * Change this once the support for multiple masters comes in
+ */
+const NUM_VLRTR_MASTER = 1
+const NUM_VLRTR_AGENT = 1
+
+// Port constants
+const VRTR_MASTER_PORT = 9101
+const VRTR_RPC_PORT = 9121
+const VRTR_OVS_PORT = 9151
+const VXLAN_MASTER_PORT = 9201
+const VXLAN_RPC_PORT = 9221
+const VXLAN_OVS_PORT = 9251
+const VLAN_MASTER_PORT = 9301
+const VLAN_RPC_PORT = 9321
+const VLAN_OVS_PORT = 9351
+const VLRTR_MASTER_PORT = 9401
+const VLRTR_RPC_PORT = 9421
+const VLRTR_OVS_PORT = 9451
+
 var vrtrMasters [NUM_MASTER]*OfnetMaster
 var vxlanMasters [NUM_MASTER]*OfnetMaster
+var vlanMasters [NUM_MASTER]*OfnetMaster
+var vlrtrMaster [NUM_VLRTR_MASTER]*OfnetMaster
 var vrtrAgents [NUM_AGENT]*OfnetAgent
 var vxlanAgents [NUM_AGENT]*OfnetAgent
-var ovsDrivers [NUM_AGENT * 3]*ovsdbDriver.OvsDriver
-var vlrtrAgent *OfnetAgent
-var vlrtrMaster *OfnetMaster
+var vlanAgents [NUM_AGENT]*OfnetAgent
+var vlrtrAgents [NUM_VLRTR_AGENT]*OfnetAgent
+var ovsDrivers [(3 * NUM_AGENT) + NUM_VLRTR_AGENT]*ovsdbDriver.OvsDriver
 
 var localIpList []string
 
@@ -44,37 +67,47 @@ func TestMain(m *testing.M) {
 
 	// Create the masters
 	for i := 0; i < NUM_MASTER; i++ {
-		vrtrMasters[i] = NewOfnetMaster(uint16(9301 + i))
+		vrtrMasters[i] = NewOfnetMaster(uint16(VRTR_MASTER_PORT + i))
 		if vrtrMasters[i] == nil {
-			log.Fatalf("Error creating ofnet master")
+			log.Fatalf("Error creating ofnet master for vrouter: %d", i)
 		}
 
-		log.Infof("Created Master: %v", vrtrMasters[i])
+		log.Infof("Created vrouter Master: %v", vrtrMasters[i])
 
-		vxlanMasters[i] = NewOfnetMaster(uint16(9051 + i))
+		vxlanMasters[i] = NewOfnetMaster(uint16(VXLAN_MASTER_PORT + i))
 		if vxlanMasters[i] == nil {
-			log.Fatalf("Error creating ofnet master")
+			log.Fatalf("Error creating ofnet master for vxlan: %d", i)
 		}
 
-		log.Infof("Created Master: %v", vxlanMasters[i])
+		log.Infof("Created vxlan Master: %v", vxlanMasters[i])
 
-	}
-	vlrtrMaster = NewOfnetMaster(uint16(9501))
-	if vlrtrMaster == nil {
-		log.Fatalf("Error creating ofnet master")
+		vlanMasters[i] = NewOfnetMaster(uint16(VLAN_MASTER_PORT + i))
+		if vlanMasters[i] == nil {
+			log.Fatalf("Error creating ofnet master for vlan: %d", i)
+		}
+
+		log.Infof("Created vlan Master: %v", vlanMasters[i])
 	}
 
-	log.Infof("Created Master: %v", vlrtrMaster)
+	for i := 0; i < NUM_VLRTR_MASTER; i++ {
+		vlrtrMaster[i] = NewOfnetMaster(uint16(VLRTR_MASTER_PORT))
+		if vlrtrMaster[i] == nil {
+			log.Fatalf("Error creating ofnet master for vlrtr: %d", i)
+		}
+
+		log.Infof("Created vlrtr Master: %v", vlrtrMaster[i])
+	}
 
 	// Wait a second for masters to be up
 	time.Sleep(1 * time.Second)
 
 	// Create agents
 	for i := 0; i < NUM_AGENT; i++ {
-		rpcPort := uint16(9101 + i)
-		ovsPort := uint16(9151 + i)
+		brName := "vrtrBridge" + fmt.Sprintf("%d", i)
+		rpcPort := uint16(VRTR_RPC_PORT + i)
+		ovsPort := uint16(VRTR_OVS_PORT + i)
 		lclIp := net.ParseIP(localIpList[i])
-		vrtrAgents[i], err = NewOfnetAgent("", "vrouter", lclIp, rpcPort, ovsPort)
+		vrtrAgents[i], err = NewOfnetAgent(brName, "vrouter", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -86,11 +119,12 @@ func TestMain(m *testing.M) {
 	}
 
 	for i := 0; i < NUM_AGENT; i++ {
-		rpcPort := uint16(9201 + i)
-		ovsPort := uint16(9251 + i)
+		brName := "vxlanBridge" + fmt.Sprintf("%d", i)
+		rpcPort := uint16(VXLAN_RPC_PORT + i)
+		ovsPort := uint16(VXLAN_OVS_PORT + i)
 		lclIp := net.ParseIP(localIpList[i])
 
-		vxlanAgents[i], err = NewOfnetAgent("", "vxlan", lclIp, rpcPort, ovsPort)
+		vxlanAgents[i], err = NewOfnetAgent(brName, "vxlan", lclIp, rpcPort, ovsPort)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -100,16 +134,54 @@ func TestMain(m *testing.M) {
 
 		log.Infof("Created vxlan ofnet agent: %v", vxlanAgents[i])
 	}
+
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "vlanBridge" + fmt.Sprintf("%d", i)
+		rpcPort := uint16(VLAN_RPC_PORT + i)
+		ovsPort := uint16(VLAN_OVS_PORT + i)
+		lclIp := net.ParseIP(localIpList[i])
+
+		vlanAgents[i], err = NewOfnetAgent(brName, "vlan", lclIp, rpcPort, ovsPort)
+		if err != nil {
+			log.Fatalf("Error creating ofnet agent. Err: %v", err)
+		}
+
+		// Override MyAddr to local host
+		vlanAgents[i].MyAddr = "127.0.0.1"
+
+		log.Infof("Created vlan ofnet agent: %v", vlanAgents[i])
+	}
+
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
+		rpcPort := uint16(VLRTR_RPC_PORT + i)
+		ovsPort := uint16(VLRTR_OVS_PORT + i)
+		lclIp := net.ParseIP(localIpList[i])
+		portName := "inb0" + fmt.Sprintf("%d", i)
+		driver := ovsdbDriver.NewOvsDriver(brName)
+		driver.CreatePort(portName, "internal", uint(1+i))
+		vlrtrAgents[i], err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, portName)
+		if err != nil {
+			log.Fatalf("Error creating ofnet agent. Err: %v", err)
+		}
+
+		// Override MyAddr to local host
+		vlrtrAgents[i].MyAddr = "127.0.0.1"
+
+		log.Infof("Created vlrtr ofnet agent: %v", vlrtrAgents[i])
+	}
+
 	masterInfo := OfnetNode{
 		HostAddr: "127.0.0.1",
 	}
+
 	var resp bool
 
 	// Add master node to each agent
 	for i := 0; i < NUM_AGENT; i++ {
 		// add the two master nodes
 		for j := 0; j < NUM_MASTER; j++ {
-			masterInfo.HostPort = uint16(9301 + j)
+			masterInfo.HostPort = uint16(VRTR_MASTER_PORT + j)
 			// connect vrtr agent to vrtr master
 			err := vrtrAgents[i].AddMaster(&masterInfo, &resp)
 			if err != nil {
@@ -117,43 +189,31 @@ func TestMain(m *testing.M) {
 			}
 
 			// connect vxlan agents to vxlan master
-			masterInfo.HostPort = uint16(9051 + j)
+			masterInfo.HostPort = uint16(VXLAN_MASTER_PORT + j)
 			err = vxlanAgents[i].AddMaster(&masterInfo, &resp)
 			if err != nil {
 				log.Fatalf("Error adding master %+v to vxlan node %d. Err: %v", masterInfo, i, err)
 			}
 
+			// connect vlan agents to vlan master
+			masterInfo.HostPort = uint16(VLAN_MASTER_PORT + j)
+			err = vlanAgents[i].AddMaster(&masterInfo, &resp)
+			if err != nil {
+				log.Fatalf("Error adding master %+v to vlan node %d. Err: %v", masterInfo, i, err)
+			}
 		}
 	}
 
-	// Create agent
-	rpcPort := uint16(9551)
-	ovsPort := uint16(9561)
-	brName := "vlrouterBridge"
-	lclIp := net.ParseIP(localIpList[0])
-	driver := ovsdbDriver.NewOvsDriver(brName)
-	driver.CreatePort("inb02", "internal", 1)
-	vlrtrAgent, err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, "inb02")
-	if err != nil {
-		log.Fatalf("Error creating ofnet agent. Err: %v", err)
-	}
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		for j := 0; j < NUM_VLRTR_MASTER; j++ {
+			// connect vlrtr agents to vlrtr master
+			masterInfo.HostPort = uint16(VLRTR_MASTER_PORT + j)
+			err = vlrtrAgents[i].AddMaster(&masterInfo, &resp)
+			if err != nil {
+				log.Fatalf("Error adding master %+v to vlrtr node %d. Err: %v", masterInfo, i, err)
+			}
 
-	// Override MyAddr to local host
-	vlrtrAgent.MyAddr = "127.0.0.1"
-
-	log.Infof("Created vlrouter ofnet agent: %v", vlrtrAgent)
-
-	ovsDrivers[2*NUM_AGENT] = ovsdbDriver.NewOvsDriver(brName)
-	err = ovsDrivers[2*NUM_AGENT].AddController("127.0.0.1", ovsPort)
-	if err != nil {
-		log.Fatalf("Error adding controller to ovs: %s", brName)
-	}
-
-	// connect vlrtr agent to vrtr master
-	masterInfo.HostPort = uint16(9501)
-	err = vlrtrAgent.AddMaster(&masterInfo, &resp)
-	if err != nil {
-		log.Fatalf("Error adding master %+v to vlrtr node. Err: %v", masterInfo, err)
+		}
 	}
 
 	log.Infof("Ofnet masters and agents are setup..")
@@ -170,19 +230,26 @@ func TestMain(m *testing.M) {
 			log.Fatalf("Error making dummy rpc call. Err: %v", err)
 			return
 		}
+		err = vlanMasters[i].MakeDummyRpcCall()
+		if err != nil {
+			log.Fatalf("Error making dummy rpc call. Err: %v", err)
+			return
+		}
 	}
-	err = vlrtrMaster.MakeDummyRpcCall()
-	if err != nil {
-		log.Fatalf("Error making dummy rpc call. Err: %v", err)
-		return
+	for i := 0; i < NUM_VLRTR_MASTER; i++ {
+		err = vlrtrMaster[i].MakeDummyRpcCall()
+		if err != nil {
+			log.Fatalf("Error making dummy rpc call. Err: %v", err)
+			return
+		}
 	}
 
 	log.Infof("Made dummy rpc call to all agents")
 
 	// Create OVS switches and connect them to vrouter ofnet agents
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr1" + fmt.Sprintf("%d", i)
-		ovsPort := uint16(9151 + i)
+		brName := "vrtrBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(VRTR_OVS_PORT + i)
 		ovsDrivers[i] = ovsdbDriver.NewOvsDriver(brName)
 		err := ovsDrivers[i].AddController("127.0.0.1", ovsPort)
 		if err != nil {
@@ -191,9 +258,33 @@ func TestMain(m *testing.M) {
 	}
 	// Create OVS switches and connect them to vxlan ofnet agents
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr2" + fmt.Sprintf("%d", i)
-		ovsPort := uint16(9251 + i)
+		brName := "vxlanBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(VXLAN_OVS_PORT + i)
 		j := NUM_AGENT + i
+		ovsDrivers[j] = ovsdbDriver.NewOvsDriver(brName)
+		err := ovsDrivers[j].AddController("127.0.0.1", ovsPort)
+		if err != nil {
+			log.Fatalf("Error adding controller to ovs: %s", brName)
+		}
+	}
+
+	// Create OVS switches and connect them to vlan ofnet agents
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "vlanBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(VLAN_OVS_PORT + i)
+		j := (2 * NUM_AGENT) + i
+		ovsDrivers[j] = ovsdbDriver.NewOvsDriver(brName)
+		err := ovsDrivers[j].AddController("127.0.0.1", ovsPort)
+		if err != nil {
+			log.Fatalf("Error adding controller to ovs: %s", brName)
+		}
+	}
+
+	// Create OVS switches and connect them to vxlan ofnet agents
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(VLRTR_OVS_PORT + i)
+		j := (3 * NUM_AGENT) + i
 		ovsDrivers[j] = ovsdbDriver.NewOvsDriver(brName)
 		err := ovsDrivers[j].AddController("127.0.0.1", ovsPort)
 		if err != nil {
@@ -222,27 +313,34 @@ func TestMain(m *testing.M) {
 // test adding vlan
 func SetupVlans() error {
 	for i := 0; i < NUM_AGENT; i++ {
-		log.Info("Infex %d \n", i)
+		log.Info("Index %d \n", i)
 		for j := 1; j < 5; j++ {
-			log.Info("Infex %d \n", j)
+			log.Info("Index %d \n", j)
 			//log.Infof("Adding Vlan %d on %s", j, localIpList[i])
 			err := vrtrAgents[i].AddNetwork(uint16(j), uint32(j), "")
 			if err != nil {
-				log.Errorf("Error adding vlan %d. Err: %v", j, err)
+				log.Errorf("Error adding vlan %d to vrtrAgent. Err: %v", j, err)
 				return err
 			}
 			err = vxlanAgents[i].AddNetwork(uint16(j), uint32(j), "")
 			if err != nil {
-				log.Errorf("Error adding vlan %d. Err: %v", j, err)
+				log.Errorf("Error adding vlan %d to vxlanAgent. Err: %v", j, err)
+				return err
+			}
+			err = vlanAgents[i].AddNetwork(uint16(j), uint32(j), "")
+			if err != nil {
+				log.Errorf("Error adding vlan %d to vlanAgent. Err: %v", j, err)
 				return err
 			}
 		}
 	}
-	err := vlrtrAgent.AddNetwork(uint16(1), uint32(1),
-		fmt.Sprintf("10.10.%d.%d", 1, 1))
-	if err != nil {
-		log.Errorf("Error adding vlan 1. Err: %v", err)
-		return err
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		err := vlrtrAgents[i].AddNetwork(uint16(1), uint32(1),
+			fmt.Sprintf("10.10.%d.%d", 1, 1))
+		if err != nil {
+			log.Errorf("Error adding vlan 1 to vlrtrAgent. Err: %v", err)
+			return err
+		}
 	}
 	return nil
 }
@@ -298,7 +396,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 
 		// verify all ovs switches have this route
 		for i := 0; i < NUM_AGENT; i++ {
-			brName := "ovsbr1" + fmt.Sprintf("%d", i)
+			brName := "vrtrBridge" + fmt.Sprintf("%d", i)
 
 			flowList, err := ofctlFlowDump(brName)
 			if err != nil {
@@ -345,7 +443,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 
 		// verify flows are deleted
 		for i := 0; i < NUM_AGENT; i++ {
-			brName := "ovsbr1" + fmt.Sprintf("%d", i)
+			brName := "vrtrBridge" + fmt.Sprintf("%d", i)
 
 			flowList, err := ofctlFlowDump(brName)
 			if err != nil {
@@ -394,7 +492,7 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 
 		// verify all ovs switches have this route
 		for i := 0; i < NUM_AGENT; i++ {
-			brName := "ovsbr2" + fmt.Sprintf("%d", i)
+			brName := "vxlanBridge" + fmt.Sprintf("%d", i)
 
 			flowList, err := ofctlFlowDump(brName)
 			if err != nil {
@@ -441,7 +539,7 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 
 		// verify flow is deleted
 		for i := 0; i < NUM_AGENT; i++ {
-			brName := "ovsbr2" + fmt.Sprintf("%d", i)
+			brName := "vxlanBridge" + fmt.Sprintf("%d", i)
 
 			flowList, err := ofctlFlowDump(brName)
 			if err != nil {
@@ -525,43 +623,45 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
 
-	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
-	if err != nil {
-		t.Errorf("Error adding Bgp Neighbor", err)
-		return
-	}
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		if err != nil {
+			t.Errorf("Error adding Bgp Neighbor", err)
+			return
+		}
 
-	timeout := grpc.WithTimeout(time.Second)
-	conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	client := api.NewGobgpApiClient(conn)
-	if client == nil {
-		t.Errorf("GoBgpApiclient is invalid")
-	}
-	arg := &api.Arguments{Name: peer}
+		timeout := grpc.WithTimeout(time.Second)
+		conn, err := grpc.Dial("127.0.0.1:8080", timeout, grpc.WithBlock(), grpc.WithInsecure())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		client := api.NewGobgpApiClient(conn)
+		if client == nil {
+			t.Errorf("GoBgpApiclient is invalid")
+		}
+		arg := &api.Arguments{Name: peer}
 
-	//Check if neighbor is added to bgp server
-	bgpPeer, err := client.GetNeighbor(context.Background(), arg)
-	if err != nil {
-		t.Errorf("GetNeighbor failed ", err)
-		return
-	}
+		//Check if neighbor is added to bgp server
+		bgpPeer, err := client.GetNeighbor(context.Background(), arg)
+		if err != nil {
+			t.Errorf("GetNeighbor failed ", err)
+			return
+		}
 
-	//Delete BGP neighbor
-	err = vlrtrAgent.DeleteBgp()
-	if err != nil {
-		t.Errorf("Error Deleting Bgp Neighbor", err)
-		return
-	}
+		//Delete BGP neighbor
+		err = vlrtrAgents[i].DeleteBgp()
+		if err != nil {
+			t.Errorf("Error Deleting Bgp Neighbor", err)
+			return
+		}
 
-	//Check if neighbor is added to bgp server
-	bgpPeer, err = client.GetNeighbor(context.Background(), arg)
-	if bgpPeer != nil {
-		t.Errorf("Neighbor is not deleted ", err)
-		return
+		//Check if neighbor is added to bgp server
+		bgpPeer, err = client.GetNeighbor(context.Background(), arg)
+		if bgpPeer != nil {
+			t.Errorf("Neighbor is not deleted ", err)
+			return
+		}
 	}
 }
 
@@ -573,92 +673,94 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
 
-	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
-	if err != nil {
-		t.Errorf("Error adding Bgp Neighbor", err)
-		return
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		if err != nil {
+			t.Errorf("Error adding Bgp Neighbor", err)
+			return
+		}
+
+		macAddr, _ := net.ParseMAC("02:02:01:06:06:06")
+		ipAddr := net.ParseIP("20.20.20.20")
+		endpoint := EndpointInfo{
+			PortNo:  uint32(NUM_AGENT + 3),
+			MacAddr: macAddr,
+			Vlan:    1,
+			IpAddr:  ipAddr,
+		}
+
+		log.Infof("Installing local vlrouter endpoint: %+v", endpoint)
+		err = vlrtrAgents[i].AddNetwork(uint16(1), uint32(1), "20.20.20.254")
+		if err != nil {
+			t.Errorf("Error adding vlan 1 . Err: %v", err)
+		}
+
+		// Install the local endpoint
+		err = vlrtrAgents[i].AddLocalEndpoint(endpoint)
+		if err != nil {
+			t.Fatalf("Error installing endpoint: %+v. Err: %v", endpoint, err)
+			return
+		}
+
+		log.Infof("Finished adding local vlrouter endpoint")
+
+		// verify all ovs switches have this route
+		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
+		flowList, err := ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+			return
+		}
+
+		// verify flow entry exists
+		ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipTableId := IP_TBL_ID
+		if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
+			return
+		}
+
+		log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
+
+		log.Infof("Adding Vlrouter endpoint successful.\n Testing Delete")
+
+		macAddr, _ = net.ParseMAC("02:02:01:06:06:06")
+		ipAddr = net.ParseIP("20.20.20.20")
+		endpoint = EndpointInfo{
+			PortNo:  uint32(NUM_AGENT + 3),
+			MacAddr: macAddr,
+			Vlan:    1,
+			IpAddr:  ipAddr,
+		}
+
+		log.Infof("Deleting local vlrouter endpoint: %+v", endpoint)
+
+		// Install the local endpoint
+		err = vlrtrAgents[i].RemoveLocalEndpoint(uint32(NUM_AGENT + 3))
+		if err != nil {
+			t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
+			return
+		}
+
+		log.Infof("Deleted endpoints. Verifying they are gone")
+
+		// verify flows are deleted
+		brName = "vlrtrBridge" + fmt.Sprintf("%d", i)
+
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		// verify flow entry exists
+		ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipTableId = IP_TBL_ID
+		if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
+			t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
+		}
+		err = vlrtrAgents[i].DeleteBgp()
+		log.Infof("Verified all flows are deleted")
 	}
-
-	macAddr, _ := net.ParseMAC("02:02:01:06:06:06")
-	ipAddr := net.ParseIP("20.20.20.20")
-	endpoint := EndpointInfo{
-		PortNo:  uint32(NUM_AGENT + 3),
-		MacAddr: macAddr,
-		Vlan:    1,
-		IpAddr:  ipAddr,
-	}
-
-	log.Infof("Installing local vlrouter endpoint: %+v", endpoint)
-	err = vlrtrAgent.AddNetwork(uint16(1), uint32(1), "20.20.20.254")
-	if err != nil {
-		t.Errorf("Error adding vlan 1 . Err: %v", err)
-	}
-
-	// Install the local endpoint
-	err = vlrtrAgent.AddLocalEndpoint(endpoint)
-	if err != nil {
-		t.Fatalf("Error installing endpoint: %+v. Err: %v", endpoint, err)
-		return
-	}
-
-	log.Infof("Finished adding local vlrouter endpoint")
-
-	// verify all ovs switches have this route
-	brName := "vlrouterBridge"
-	flowList, err := ofctlFlowDump(brName)
-	if err != nil {
-		t.Errorf("Error getting flow entries. Err: %v", err)
-		return
-	}
-
-	// verify flow entry exists
-	ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
-	ipTableId := IP_TBL_ID
-	if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
-		return
-	}
-
-	log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
-
-	log.Infof("Adding Vlrouter endpoint successful.\n Testing Delete")
-
-	macAddr, _ = net.ParseMAC("02:02:01:06:06:06")
-	ipAddr = net.ParseIP("20.20.20.20")
-	endpoint = EndpointInfo{
-		PortNo:  uint32(NUM_AGENT + 3),
-		MacAddr: macAddr,
-		Vlan:    1,
-		IpAddr:  ipAddr,
-	}
-
-	log.Infof("Deleting local vlrouter endpoint: %+v", endpoint)
-
-	// Install the local endpoint
-	err = vlrtrAgent.RemoveLocalEndpoint(uint32(NUM_AGENT + 3))
-	if err != nil {
-		t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
-		return
-	}
-
-	log.Infof("Deleted endpoints. Verifying they are gone")
-
-	// verify flows are deleted
-	brName = "vlrouterBridge"
-
-	flowList, err = ofctlFlowDump(brName)
-	if err != nil {
-		t.Errorf("Error getting flow entries. Err: %v", err)
-	}
-
-	// verify flow entry exists
-	ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
-	ipTableId = IP_TBL_ID
-	if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
-		t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
-	}
-	err = vlrtrAgent.DeleteBgp()
-	log.Infof("Verified all flows are deleted")
 }
 
 // Test adding/deleting Vlrouter routes
@@ -670,64 +772,86 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
 
-	err := vlrtrAgent.AddBgp(routerIP, as, neighborAs, peer)
-	time.Sleep(5 * time.Second)
-	if err != nil {
-		t.Errorf("Error adding Bgp Neighbor", err)
-		return
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		time.Sleep(5 * time.Second)
+		if err != nil {
+			t.Errorf("Error adding Bgp Neighbor", err)
+			return
+		}
+		path := &api.Path{
+			Pattrs: make([][]byte, 0),
+		}
+		nlri := bgp.NewIPAddrPrefix(32, "20.20.20.20")
+		path.Nlri, _ = nlri.Serialize()
+		origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
+		path.Pattrs = append(path.Pattrs, origin)
+		aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
+		aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
+		path.Pattrs = append(path.Pattrs, aspath)
+		n, _ := bgp.NewPathAttributeNextHop("50.1.1.3").Serialize()
+		path.Pattrs = append(path.Pattrs, n)
+		vlrtrAgents[i].protopath.ModifyProtoRib(path)
+		log.Infof("Adding path to the Bgp Rib")
+		time.Sleep(2 * time.Second)
+
+		// verify flow entry exists
+		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
+
+		flowList, err := ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipTableId := IP_TBL_ID
+		if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
+			return
+		}
+		log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
+
+		// withdraw the route
+		path.IsWithdraw = true
+		vlrtrAgents[i].protopath.ModifyProtoRib(path)
+		log.Infof("Withdrawing route from BGP rib")
+
+		// verify flow entry exists
+		brName = "vlrtrBridge" + fmt.Sprintf("%d", i)
+
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipTableId = IP_TBL_ID
+		if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
+			t.Errorf("Found the route %s on ovs %s which was withdrawn", ipFlowMatch, brName)
+			return
+		}
+		log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
 	}
-	path := &api.Path{
-		Pattrs: make([][]byte, 0),
+}
+
+// Verify if the flow entries are installed on vlan bridge
+func TestVlanFlowEntry(t *testing.T) {
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "vlanBridge" + fmt.Sprintf("%d", i)
+
+		flowList, err := ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		// Check if ARP Request redirect entry is installed
+		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
+		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		log.Infof("Found arp redirect flow %s on ovs %s", arpFlowMatch, brName)
 	}
-	nlri := bgp.NewIPAddrPrefix(32, "20.20.20.20")
-	path.Nlri, _ = nlri.Serialize()
-	origin, _ := bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_EGP).Serialize()
-	path.Pattrs = append(path.Pattrs, origin)
-	aspathParam := []bgp.AsPathParamInterface{bgp.NewAs4PathParam(2, []uint32{65002})}
-	aspath, _ := bgp.NewPathAttributeAsPath(aspathParam).Serialize()
-	path.Pattrs = append(path.Pattrs, aspath)
-	n, _ := bgp.NewPathAttributeNextHop("50.1.1.3").Serialize()
-	path.Pattrs = append(path.Pattrs, n)
-	vlrtrAgent.protopath.ModifyProtoRib(path)
-	log.Infof("Adding path to the Bgp Rib")
-	time.Sleep(2 * time.Second)
-
-	// verify flow entry exists
-	brName := "vlrouterBridge"
-
-	flowList, err := ofctlFlowDump(brName)
-	if err != nil {
-		t.Errorf("Error getting flow entries. Err: %v", err)
-	}
-
-	ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
-	ipTableId := IP_TBL_ID
-	if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
-		t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
-		return
-	}
-	log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
-
-	// withdraw the route
-	path.IsWithdraw = true
-	vlrtrAgent.protopath.ModifyProtoRib(path)
-	log.Infof("Withdrawing route from BGP rib")
-
-	// verify flow entry exists
-	brName = "vlrouterBridge"
-
-	flowList, err = ofctlFlowDump(brName)
-	if err != nil {
-		t.Errorf("Error getting flow entries. Err: %v", err)
-	}
-
-	ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
-	ipTableId = IP_TBL_ID
-	if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
-		t.Errorf("Found the route %s on ovs %s which was withdrawn", ipFlowMatch, brName)
-		return
-	}
-	log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
 }
 
 // Wait for debug and cleanup
@@ -738,10 +862,14 @@ func TestWaitAndCleanup(t *testing.T) {
 	for i := 0; i < NUM_AGENT; i++ {
 		vrtrAgents[i].Delete()
 		vxlanAgents[i].Delete()
+		vlanAgents[i].Delete()
+	}
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		vlrtrAgents[i].Delete()
 	}
 
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr1" + fmt.Sprintf("%d", i)
+		brName := "vrtrBridge" + fmt.Sprintf("%d", i)
 		log.Infof("Deleting OVS bridge: %s", brName)
 		err := ovsDrivers[i].DeleteBridge(brName)
 		if err != nil {
@@ -749,17 +877,27 @@ func TestWaitAndCleanup(t *testing.T) {
 		}
 	}
 	for i := 0; i < NUM_AGENT; i++ {
-		brName := "ovsbr2" + fmt.Sprintf("%d", i)
+		brName := "vxlanBridge" + fmt.Sprintf("%d", i)
 		log.Infof("Deleting OVS bridge: %s", brName)
-		err := ovsDrivers[i].DeleteBridge(brName)
+		err := ovsDrivers[NUM_AGENT+i].DeleteBridge(brName)
 		if err != nil {
 			t.Errorf("Error deleting the bridge. Err: %v", err)
 		}
 	}
-	brName := "vlrouterBridge"
-	log.Infof("Deleting OVS bridge: %s", brName)
-	err := ovsDrivers[2*NUM_AGENT].DeleteBridge(brName)
-	if err != nil {
-		t.Errorf("Error deleting the bridge. Err: %v", err)
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "vlanBridge" + fmt.Sprintf("%d", i)
+		log.Infof("Deleting OVS bridge: %s", brName)
+		err := ovsDrivers[(2*NUM_AGENT)+i].DeleteBridge(brName)
+		if err != nil {
+			t.Errorf("Error deleting the bridge. Err: %v", err)
+		}
+	}
+	for i := 0; i < NUM_VLRTR_AGENT; i++ {
+		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
+		log.Infof("Deleting OVS bridge: %s", brName)
+		err := ovsDrivers[(3*NUM_AGENT)+i].DeleteBridge(brName)
+		if err != nil {
+			t.Errorf("Error deleting the bridge. Err: %v", err)
+		}
 	}
 }
