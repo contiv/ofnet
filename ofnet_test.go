@@ -854,6 +854,26 @@ func TestVlanFlowEntry(t *testing.T) {
 	}
 }
 
+// Verify if the flow entries are installed on vlan bridge
+func TestVxlanFlowEntry(t *testing.T) {
+	for i := 0; i < NUM_AGENT; i++ {
+		brName := "vxlanBridge" + fmt.Sprintf("%d", i)
+
+		flowList, err := ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		// Check if ARP Request redirect entry is installed
+		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
+		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		log.Infof("Found arp redirect flow %s on ovs %s", arpFlowMatch, brName)
+	}
+}
+
 // Wait for debug and cleanup
 func TestWaitAndCleanup(t *testing.T) {
 	time.Sleep(1 * time.Second)
