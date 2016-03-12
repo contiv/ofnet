@@ -133,6 +133,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	if err != nil {
 		log.Errorf("Error creating the port", err)
 	}
+	defer self.agent.ovsDriver.DeletePort(self.intfName)
 
 	intfIP := fmt.Sprintf("%s/%d", self.routerIP, len)
 	log.Debugf("Creating inb01 with ", intfIP)
@@ -620,6 +621,11 @@ func (self *OfnetBgp) modRib(path *api.Path) error {
 	if nextHop == self.routerIP {
 		log.Info("This is a local route skipping endpoint create! ")
 		return nil
+	} else if self.agent.endpointDb[epid] != nil {
+		if self.agent.endpointDb[epid].EndpointType != "external" {
+			log.Info("Endpoint was learnt via internal protocol. skipping update! ")
+			return nil
+		}
 	}
 
 	if self.agent.endpointDb[nextHop] == nil {
