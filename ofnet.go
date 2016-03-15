@@ -76,6 +76,9 @@ type OfnetDatapath interface {
 
 	// Service Proxy Back End update
 	SvcProviderUpdate(svcName string, providers []string)
+
+	// Send GARP
+	SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error
 }
 
 // Interface implemented by each control protocol.

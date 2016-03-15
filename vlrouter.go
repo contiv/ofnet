@@ -628,15 +628,19 @@ func (self *Vlrouter) RemoveUplink(portNo uint32) error {
 
 // AddSvcSpec adds a service spec to proxy
 func (self *Vlrouter) AddSvcSpec(svcName string, spec *ServiceSpec) error {
-        return nil
+	return nil
 }
 
 // DelSvcSpec removes a service spec from proxy
 func (self *Vlrouter) DelSvcSpec(svcName string, spec *ServiceSpec) error {
-        return nil
+	return nil
 }
 
 // SvcProviderUpdate Service Proxy Back End update
 func (self *Vlrouter) SvcProviderUpdate(svcName string, providers []string) {
 }
 
+// SendGARP sends GARP for the specified IP, MAC
+func (self *Vlrouter) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+	return nil
+}

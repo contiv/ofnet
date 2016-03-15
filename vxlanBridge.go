@@ -680,6 +680,12 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 		switch arpIn.Operation {
 		case protocol.Type_Request:
+			// If it's a GARP packet, ignore processing
+			if arpIn.IPSrc.String() == arpIn.IPDst.String() {
+				log.Debugf("Ignoring GARP packet")
+				return
+			}
+
 			// Lookup the Source and Dest IP in the endpoint table
 			srcEp := self.agent.getEndpointByIp(arpIn.IPSrc)
 			dstEp := self.agent.getEndpointByIp(arpIn.IPDst)
@@ -788,4 +794,44 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 			self.ofSwitch.Send(pktOut)
 		}
 	}
+}
+
+// SendGARP sends GARP for the specified IP, MAC
+func (self *Vxlan) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+	garpPkt, _ := protocol.NewARP(protocol.Type_Request)
+	garpPkt.HWSrc = mac
+	garpPkt.IPSrc = ip
+	garpPkt.HWDst, _ = net.ParseMAC("00:00:00:00:00:00")
+	garpPkt.IPDst = ip
+
+	log.Infof("Sending Gratuitous ARP request: %+v", garpPkt)
+
+	// Build the ethernet packet
+	ethPkt := protocol.NewEthernet()
+	ethPkt.HWDst, _ = net.ParseMAC("FF:FF:FF:FF:FF:FF")
+	ethPkt.HWSrc = mac
+	ethPkt.Ethertype = 0x0806
+	ethPkt.Data = garpPkt
+
+	log.Debugf("Sending Gratuitous ARP request Ethernet: %+v", ethPkt)
+
+	// Construct Packet out
+	pktOut := openflow13.NewPacketOut()
+	pktOut.Data = ethPkt
+
+	vni := self.agent.vlanVniMap[vlanID]
+	tunnelIdField := openflow13.NewTunnelIdField(uint64(*vni))
+	setTunnelAction := openflow13.NewActionSetField(*tunnelIdField)
+
+	// Add set tunnel action to the instruction
+	pktOut.AddAction(setTunnelAction)
+
+	for _, vtepPort := range self.agent.vtepTable {
+		log.Debugf("Sending to Vtep port: %+v", *vtepPort)
+		pktOut.AddAction(openflow13.NewActionOutput(*vtepPort))
+	}
+
+	// Send it out
+	self.ofSwitch.Send(pktOut)
+	return nil
 }
