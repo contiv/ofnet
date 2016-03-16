@@ -147,9 +147,10 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	linkIP, err := netlink.ParseAddr(intfIP)
 	if err != nil {
 		log.Errorf("invalid ip ", intfIP)
+                return err
 	}
 	netlink.AddrAdd(link, linkIP)
-
+        netlink.LinkSetUp(link)
 	if link == nil || ofPortno == 0 {
 		log.Errorf("Error fetching %v information", self.intfName, link, ofPortno)
 		return errors.New("Unable to fetch inb01 info")
