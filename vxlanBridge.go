@@ -726,16 +726,24 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 				}
 			}
 			if srcEp != nil && dstEp == nil {
+				// If the ARP request was received from VTEP port
+				// Ignore processing the packet
+				for _, vtepPort := range self.agent.vtepTable {
+					if *vtepPort == inPort {
+						log.Debugf("Received packet from VTEP port. Ignore processing")
+						return
+					}
+				}
+
 				// ARP request from local container to unknown IP
 				// Reinject ARP to VTEP ports
-
 				ethPkt := protocol.NewEthernet()
 				ethPkt.HWDst = pkt.HWDst
 				ethPkt.HWSrc = pkt.HWSrc
 				ethPkt.Ethertype = 0x0806
 				ethPkt.Data = &arpIn
 
-				log.Infof("Received ARP request for unknown IP: %v."+
+				log.Infof("Received ARP request for unknown IP: %v. "+
 					"Reinjecting ARP request Ethernet to VTEP ports: %+v", arpIn.IPDst, ethPkt)
 
 				// Packet out
@@ -750,10 +758,6 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 				pktOut.AddAction(setTunnelAction)
 
 				for _, vtepPort := range self.agent.vtepTable {
-					if *vtepPort == inPort {
-						log.Debugf("Prevent sending it to incoming port")
-						continue
-					}
 					log.Debugf("Sending to VTEP port: %+v", *vtepPort)
 					pktOut.AddAction(openflow13.NewActionOutput(*vtepPort))
 				}
