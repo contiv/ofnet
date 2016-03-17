@@ -79,6 +79,7 @@ type Vlan struct {
 }
 
 const METADATA_RX_VTEP = 0x1
+const VXLAN_GARP_SUPPORT = false
 
 // Create a new vxlan instance
 func NewVxlan(agent *OfnetAgent, rpcServ *rpc.Server) *Vxlan {
@@ -798,6 +799,12 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 // SendGARP sends GARP for the specified IP, MAC
 func (self *Vxlan) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+
+	// NOTE: This is disabled for now. Will be added when EVPN support is added.
+	if !VXLAN_GARP_SUPPORT {
+		return nil
+	}
+
 	garpPkt, _ := protocol.NewARP(protocol.Type_Request)
 	garpPkt.HWSrc = mac
 	garpPkt.IPSrc = ip
