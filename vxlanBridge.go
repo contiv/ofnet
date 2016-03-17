@@ -742,7 +742,18 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 				pktOut := openflow13.NewPacketOut()
 				pktOut.InPort = inPort
 				pktOut.Data = ethPkt
+
+				tunnelIdField := openflow13.NewTunnelIdField(uint64(srcEp.Vni))
+				setTunnelAction := openflow13.NewActionSetField(*tunnelIdField)
+
+				// Add set tunnel action to the instruction
+				pktOut.AddAction(setTunnelAction)
+
 				for _, vtepPort := range self.agent.vtepTable {
+					if *vtepPort == inPort {
+						log.Debugf("Prevent sending it to incoming port")
+						continue
+					}
 					log.Debugf("Sending to VTEP port: %+v", *vtepPort)
 					pktOut.AddAction(openflow13.NewActionOutput(*vtepPort))
 				}
