@@ -145,6 +145,14 @@ func (vl *VlanBridge) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
+	// Send GARP
+	mac, _ := net.ParseMAC(endpoint.MacAddrStr)
+	err = vl.sendGARP(endpoint.IpAddr, mac, endpoint.Vlan)
+	if err != nil {
+		log.Warnf("Error in sending GARP packet for (%s,%s) in vlan %d. Err: %+v",
+			endpoint.IpAddr.String(), endpoint.MacAddrStr, endpoint.Vlan, err)
+	}
+
 	return nil
 }
 
@@ -443,8 +451,8 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 	}
 }
 
-// SendGARP sends GARP for the specified IP, MAC
-func (vl *VlanBridge) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+// sendGARP sends GARP for the specified IP, MAC
+func (vl *VlanBridge) sendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
 	garpPkt, _ := protocol.NewARP(protocol.Type_Request)
 	garpPkt.HWSrc = mac
 	garpPkt.IPSrc = ip
@@ -466,9 +474,14 @@ func (vl *VlanBridge) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) e
 	// Construct Packet out
 	pktOut := openflow13.NewPacketOut()
 	pktOut.Data = ethPkt
+
 	for _, portNo := range vl.uplinkDb {
 		log.Debugf("Sending to uplink: %+v", portNo)
 		pktOut.AddAction(openflow13.NewActionOutput(portNo))
+
+		// NOTE: Sending it on only one uplink to avoid loops
+		// Once MAC pinning mode is supported, this logic has to change
+		break
 	}
 
 	// Send it out

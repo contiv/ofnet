@@ -79,7 +79,7 @@ type Vlan struct {
 }
 
 const METADATA_RX_VTEP = 0x1
-const VXLAN_GARP_SUPPORT = false
+const VXLAN_GARP_SUPPORTED = false
 
 // Create a new vxlan instance
 func NewVxlan(agent *OfnetAgent, rpcServ *rpc.Server) *Vxlan {
@@ -221,6 +221,13 @@ func (self *Vxlan) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	// Save the flow in DB
 	self.macFlowDb[endpoint.MacAddrStr] = macFlow
+
+	// Send GARP
+	err = self.sendGARP(endpoint.IpAddr, macAddr, uint64(endpoint.Vni))
+	if err != nil {
+		log.Warnf("Error in sending GARP packet for (%s,%s) in vlan %d. Err: %+v",
+			endpoint.IpAddr.String(), endpoint.MacAddrStr, endpoint.Vlan, err)
+	}
 
 	return nil
 }
@@ -797,11 +804,11 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 	}
 }
 
-// SendGARP sends GARP for the specified IP, MAC
-func (self *Vxlan) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+// sendGARP sends GARP for the specified IP, MAC
+func (self *Vxlan) sendGARP(ip net.IP, mac net.HardwareAddr, vni uint64) error {
 
 	// NOTE: This is disabled for now. Will be added when EVPN support is added.
-	if !VXLAN_GARP_SUPPORT {
+	if !VXLAN_GARP_SUPPORTED {
 		return nil
 	}
 
@@ -826,8 +833,7 @@ func (self *Vxlan) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) erro
 	pktOut := openflow13.NewPacketOut()
 	pktOut.Data = ethPkt
 
-	vni := self.agent.vlanVniMap[vlanID]
-	tunnelIdField := openflow13.NewTunnelIdField(uint64(*vni))
+	tunnelIdField := openflow13.NewTunnelIdField(vni)
 	setTunnelAction := openflow13.NewActionSetField(*tunnelIdField)
 
 	// Add set tunnel action to the instruction

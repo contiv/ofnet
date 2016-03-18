@@ -642,16 +642,3 @@ func (self *OfnetAgent) DeleteLocalProtoRoute(path *OfnetProtoRouteInfo) {
 		self.protopath.DeleteLocalProtoRoute(path)
 	}
 }
-
-// SendGARP sends the Gratuitous ARP
-func (self *OfnetAgent) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
-	if self.datapath != nil {
-		err := self.datapath.SendGARP(ip, mac, vlanID)
-		if err != nil {
-			log.Errorf("Error sending GARP: Err: %v", err)
-		}
-	} else {
-		return errors.New("Ofnet agent's datapath not initialized")
-	}
-	return nil
-}

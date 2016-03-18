@@ -542,8 +542,3 @@ func (self *Vrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 		}
 	}
 }
-
-// SendGARP sends GARP for the specified IP, MAC
-func (vr *Vrouter) SendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
-	return nil
-}
