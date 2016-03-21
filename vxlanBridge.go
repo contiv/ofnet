@@ -807,31 +807,12 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 // sendGARP sends GARP for the specified IP, MAC
 func (self *Vxlan) sendGARP(ip net.IP, mac net.HardwareAddr, vni uint64) error {
 
-	// NOTE: This is disabled for now. Will be added when EVPN support is added.
+	// NOTE: Enable this when EVPN support is added.
 	if !VXLAN_GARP_SUPPORTED {
 		return nil
 	}
 
-	garpPkt, _ := protocol.NewARP(protocol.Type_Request)
-	garpPkt.HWSrc = mac
-	garpPkt.IPSrc = ip
-	garpPkt.HWDst, _ = net.ParseMAC("00:00:00:00:00:00")
-	garpPkt.IPDst = ip
-
-	log.Infof("Sending Gratuitous ARP request: %+v", garpPkt)
-
-	// Build the ethernet packet
-	ethPkt := protocol.NewEthernet()
-	ethPkt.HWDst, _ = net.ParseMAC("FF:FF:FF:FF:FF:FF")
-	ethPkt.HWSrc = mac
-	ethPkt.Ethertype = 0x0806
-	ethPkt.Data = garpPkt
-
-	log.Debugf("Sending Gratuitous ARP request Ethernet: %+v", ethPkt)
-
-	// Construct Packet out
-	pktOut := openflow13.NewPacketOut()
-	pktOut.Data = ethPkt
+    pktOut := BuildGarpPkt(ip, mac, 0)
 
 	tunnelIdField := openflow13.NewTunnelIdField(vni)
 	setTunnelAction := openflow13.NewActionSetField(*tunnelIdField)

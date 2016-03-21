@@ -453,27 +453,7 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 // sendGARP sends GARP for the specified IP, MAC
 func (vl *VlanBridge) sendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
-	garpPkt, _ := protocol.NewARP(protocol.Type_Request)
-	garpPkt.HWSrc = mac
-	garpPkt.IPSrc = ip
-	garpPkt.HWDst, _ = net.ParseMAC("00:00:00:00:00:00")
-	garpPkt.IPDst = ip
-
-	log.Infof("Sending Gratuitous ARP request: %+v", garpPkt)
-
-	// Build the ethernet packet
-	ethPkt := protocol.NewEthernet()
-	ethPkt.VLANID.VID = vlanID
-	ethPkt.HWDst, _ = net.ParseMAC("FF:FF:FF:FF:FF:FF")
-	ethPkt.HWSrc = mac
-	ethPkt.Ethertype = 0x0806
-	ethPkt.Data = garpPkt
-
-	log.Debugf("Sending Gratuitous ARP request Ethernet: %+v", ethPkt)
-
-	// Construct Packet out
-	pktOut := openflow13.NewPacketOut()
-	pktOut.Data = ethPkt
+    pktOut := BuildGarpPkt(ip, mac, vlanID)
 
 	for _, portNo := range vl.uplinkDb {
 		log.Debugf("Sending to uplink: %+v", portNo)
