@@ -603,6 +603,10 @@ func (self *OfnetAgent) AddBgp(routerIP string, As string, neighborAs string, pe
 		NeighborIP:   peer,
 		As:           neighborAs,
 	}
+	rinfo := self.protopath.GetRouterInfo()
+	if rinfo != nil && rinfo.RouterIP != "" {
+		self.DeleteBgp()
+	}
 
 	go self.protopath.StartProtoServer(routerInfo)
 
