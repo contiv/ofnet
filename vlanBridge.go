@@ -145,6 +145,14 @@ func (vl *VlanBridge) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
+	// Send GARP
+	mac, _ := net.ParseMAC(endpoint.MacAddrStr)
+	err = vl.sendGARP(endpoint.IpAddr, mac, endpoint.Vlan)
+	if err != nil {
+		log.Warnf("Error in sending GARP packet for (%s,%s) in vlan %d. Err: %+v",
+			endpoint.IpAddr.String(), endpoint.MacAddrStr, endpoint.Vlan, err)
+	}
+
 	return nil
 }
 
@@ -253,18 +261,17 @@ func (vl *VlanBridge) RemoveUplink(portNo uint32) error {
 
 // AddSvcSpec adds a service spec to proxy
 func (vl *VlanBridge) AddSvcSpec(svcName string, spec *ServiceSpec) error {
-        return nil
+	return nil
 }
 
 // DelSvcSpec removes a service spec from proxy
 func (vl *VlanBridge) DelSvcSpec(svcName string, spec *ServiceSpec) error {
-        return nil
+	return nil
 }
 
 // SvcProviderUpdate Service Proxy Back End update
 func (vl *VlanBridge) SvcProviderUpdate(svcName string, providers []string) {
 }
-
 
 // initialize Fgraph on the switch
 func (vl *VlanBridge) initFgraph() error {
@@ -323,7 +330,7 @@ func (vl *VlanBridge) initFgraph() error {
  *      - ARP Request to a router/VM scenario. Reinject ARP request to uplinks
  * Src EP not known, Dest EP known:
  *      - Proxy ARP if Dest EP is present locally on the host
- * Src and Dest EP not known: 
+ * Src and Dest EP not known:
  *      - Ignore processing the request
  */
 func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
@@ -334,6 +341,12 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 		switch arpIn.Operation {
 		case protocol.Type_Request:
+			// If it's a GARP packet, ignore processing
+			if arpIn.IPSrc.String() == arpIn.IPDst.String() {
+				log.Debugf("Ignoring GARP packet")
+				return
+			}
+
 			// Lookup the Source and Dest IP in the endpoint table
 			srcEp := vl.agent.getEndpointByIp(arpIn.IPSrc)
 			dstEp := vl.agent.getEndpointByIp(arpIn.IPDst)
@@ -380,9 +393,17 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 				}
 			}
 			if srcEp != nil && dstEp == nil {
+				// If the ARP request was received from uplink
+				// Ignore processing the packet
+				for _, portNo := range vl.uplinkDb {
+					if portNo == inPort {
+						log.Debugf("Ignore processing ARP packet from uplink")
+						return
+					}
+				}
+
 				// ARP request from local container to unknown IP
 				// Reinject ARP to uplinks
-
 				ethPkt := protocol.NewEthernet()
 				ethPkt.VLANID.VID = srcEp.Vlan
 				ethPkt.HWDst = pkt.HWDst
@@ -390,7 +411,7 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 				ethPkt.Ethertype = 0x0806
 				ethPkt.Data = &arpIn
 
-				log.Infof("Received ARP request for unknown IP: %v."+
+				log.Infof("Received ARP request for unknown IP: %v. "+
 					"Reinjecting ARP request Ethernet to uplinks: %+v", arpIn.IPDst, ethPkt)
 
 				// Packet out
@@ -428,4 +449,22 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 			vl.ofSwitch.Send(pktOut)
 		}
 	}
+}
+
+// sendGARP sends GARP for the specified IP, MAC
+func (vl *VlanBridge) sendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) error {
+    pktOut := BuildGarpPkt(ip, mac, vlanID)
+
+	for _, portNo := range vl.uplinkDb {
+		log.Debugf("Sending to uplink: %+v", portNo)
+		pktOut.AddAction(openflow13.NewActionOutput(portNo))
+
+		// NOTE: Sending it on only one uplink to avoid loops
+		// Once MAC pinning mode is supported, this logic has to change
+		break
+	}
+
+	// Send it out
+	vl.ofSwitch.Send(pktOut)
+	return nil
 }
