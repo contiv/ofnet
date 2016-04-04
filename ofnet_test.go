@@ -317,17 +317,17 @@ func SetupVlans() error {
 		for j := 1; j < 5; j++ {
 			log.Info("Index %d \n", j)
 			//log.Infof("Adding Vlan %d on %s", j, localIpList[i])
-			err := vrtrAgents[i].AddNetwork(uint16(j), uint32(j), "")
+			err := vrtrAgents[i].AddNetwork(uint16(j), uint32(j), "", "tenant1")
 			if err != nil {
 				log.Errorf("Error adding vlan %d to vrtrAgent. Err: %v", j, err)
 				return err
 			}
-			err = vxlanAgents[i].AddNetwork(uint16(j), uint32(j), "")
+			err = vxlanAgents[i].AddNetwork(uint16(j), uint32(j), "", "default")
 			if err != nil {
 				log.Errorf("Error adding vlan %d to vxlanAgent. Err: %v", j, err)
 				return err
 			}
-			err = vlanAgents[i].AddNetwork(uint16(j), uint32(j), "")
+			err = vlanAgents[i].AddNetwork(uint16(j), uint32(j), "", "default")
 			if err != nil {
 				log.Errorf("Error adding vlan %d to vlanAgent. Err: %v", j, err)
 				return err
@@ -336,7 +336,7 @@ func SetupVlans() error {
 	}
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
 		err := vlrtrAgents[i].AddNetwork(uint16(1), uint32(1),
-			fmt.Sprintf("10.10.%d.%d", 1, 1))
+			fmt.Sprintf("10.10.%d.%d", 1, 1), "default")
 		if err != nil {
 			log.Errorf("Error adding vlan 1 to vlrtrAgent. Err: %v", err)
 			return err
@@ -402,11 +402,10 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
-
 			// verify flow entry exists
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
-				ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.10.%d.%d", k, k)
+				ipFlowMatch := fmt.Sprintf("priority=100,ip,metadata=0x100000000/0xff00000000,nw_dst=10.10.%d.%d", k, k)
 				ipTableId := IP_TBL_ID
 				if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 					t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
@@ -449,11 +448,10 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
-
 			// verify flow entry exists
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
-				ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.10.%d.%d", k, k)
+				ipFlowMatch := fmt.Sprintf("priority=100,ip,metadata=0x100000000/0xff00000000,nw_dst=10.10.%d.%d", k, k)
 				ipTableId := IP_TBL_ID
 				if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 					t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
@@ -498,7 +496,6 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
-
 			// verify flow entry exists
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
@@ -690,7 +687,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 		}
 
 		log.Infof("Installing local vlrouter endpoint: %+v", endpoint)
-		err = vlrtrAgents[i].AddNetwork(uint16(1), uint32(1), "20.20.20.254")
+		err = vlrtrAgents[i].AddNetwork(uint16(1), uint32(1), "20.20.20.254", "default")
 		if err != nil {
 			t.Errorf("Error adding vlan 1 . Err: %v", err)
 		}
@@ -751,7 +748,6 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
-
 		// verify flow entry exists
 		ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
 		ipTableId = IP_TBL_ID
@@ -802,7 +798,6 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
-
 		ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
 		ipTableId := IP_TBL_ID
 		if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {

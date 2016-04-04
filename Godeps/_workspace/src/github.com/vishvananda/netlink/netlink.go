@@ -33,10 +33,7 @@ func ParseIPNet(s string) (*net.IPNet, error) {
 	return &net.IPNet{IP: ip, Mask: ipNet.Mask}, nil
 }
 
-// NewIPNet generates an IPNet from an ip address using a netmask of 32 or 128.
+// NewIPNet generates an IPNet from an ip address using a netmask of 32.
 func NewIPNet(ip net.IP) *net.IPNet {
-	if ip.To4() != nil {
-		return &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
-	}
-	return &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
+	return &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
 }

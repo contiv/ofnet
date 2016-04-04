@@ -11,11 +11,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/google/gopacket"
-	"reflect"
+	"strconv"
 )
 
+type ICMPv6TypeCode uint16
+
 const (
-	// The following are from RFC 4443
 	ICMPv6TypeDestinationUnreachable = 1
 	ICMPv6TypePacketTooBig           = 2
 	ICMPv6TypeTimeExceeded           = 3
@@ -30,134 +31,64 @@ const (
 	ICMPv6TypeRedirect              = 137
 )
 
-const (
-	// DestinationUnreachable
-	ICMPv6CodeNoRouteToDst           = 0
-	ICMPv6CodeAdminProhibited        = 1
-	ICMPv6CodeBeyondScopeOfSrc       = 2
-	ICMPv6CodeAddressUnreachable     = 3
-	ICMPv6CodePortUnreachable        = 4
-	ICMPv6CodeSrcAddressFailedPolicy = 5
-	ICMPv6CodeRejectRouteToDst       = 6
-
-	// TimeExceeded
-	ICMPv6CodeHopLimitExceeded               = 0
-	ICMPv6CodeFragmentReassemblyTimeExceeded = 1
-
-	// ParameterProblem
-	ICMPv6CodeErroneousHeaderField   = 0
-	ICMPv6CodeUnrecognizedNextHeader = 1
-	ICMPv6CodeUnrecognizedIPv6Option = 2
-)
-
-type icmpv6TypeCodeInfoStruct struct {
-	typeStr string
-	codeStr *map[uint8]string
-}
-
-var (
-	icmpv6TypeCodeInfo = map[uint8]icmpv6TypeCodeInfoStruct{
-		ICMPv6TypeDestinationUnreachable: icmpv6TypeCodeInfoStruct{
-			"DestinationUnreachable", &map[uint8]string{
-				ICMPv6CodeNoRouteToDst:           "NoRouteToDst",
-				ICMPv6CodeAdminProhibited:        "AdminProhibited",
-				ICMPv6CodeBeyondScopeOfSrc:       "BeyondScopeOfSrc",
-				ICMPv6CodeAddressUnreachable:     "AddressUnreachable",
-				ICMPv6CodePortUnreachable:        "PortUnreachable",
-				ICMPv6CodeSrcAddressFailedPolicy: "SrcAddressFailedPolicy",
-				ICMPv6CodeRejectRouteToDst:       "RejectRouteToDst",
-			},
-		},
-		ICMPv6TypePacketTooBig: icmpv6TypeCodeInfoStruct{
-			"PacketTooBig", nil,
-		},
-		ICMPv6TypeTimeExceeded: icmpv6TypeCodeInfoStruct{
-			"TimeExceeded", &map[uint8]string{
-				ICMPv6CodeHopLimitExceeded:               "HopLimitExceeded",
-				ICMPv6CodeFragmentReassemblyTimeExceeded: "FragmentReassemblyTimeExceeded",
-			},
-		},
-		ICMPv6TypeParameterProblem: icmpv6TypeCodeInfoStruct{
-			"ParameterProblem", &map[uint8]string{
-				ICMPv6CodeErroneousHeaderField:   "ErroneousHeaderField",
-				ICMPv6CodeUnrecognizedNextHeader: "UnrecognizedNextHeader",
-				ICMPv6CodeUnrecognizedIPv6Option: "UnrecognizedIPv6Option",
-			},
-		},
-		ICMPv6TypeEchoRequest: icmpv6TypeCodeInfoStruct{
-			"EchoRequest", nil,
-		},
-		ICMPv6TypeEchoReply: icmpv6TypeCodeInfoStruct{
-			"EchoReply", nil,
-		},
-		ICMPv6TypeRouterSolicitation: icmpv6TypeCodeInfoStruct{
-			"RouterSolicitation", nil,
-		},
-		ICMPv6TypeRouterAdvertisement: icmpv6TypeCodeInfoStruct{
-			"RouterAdvertisement", nil,
-		},
-		ICMPv6TypeNeighborSolicitation: icmpv6TypeCodeInfoStruct{
-			"NeighborSolicitation", nil,
-		},
-		ICMPv6TypeNeighborAdvertisement: icmpv6TypeCodeInfoStruct{
-			"NeighborAdvertisement", nil,
-		},
-		ICMPv6TypeRedirect: icmpv6TypeCodeInfoStruct{
-			"Redirect", nil,
-		},
-	}
-)
-
-type ICMPv6TypeCode uint16
-
-// Type returns the ICMPv6 type field.
-func (a ICMPv6TypeCode) Type() uint8 {
-	return uint8(a >> 8)
-}
-
-// Code returns the ICMPv6 code field.
-func (a ICMPv6TypeCode) Code() uint8 {
-	return uint8(a)
-}
-
 func (a ICMPv6TypeCode) String() string {
-	t, c := a.Type(), a.Code()
-	strInfo, ok := icmpv6TypeCodeInfo[t]
-	if !ok {
-		// Unknown ICMPv6 type field
-		return fmt.Sprintf("%d(%d)", t, c)
+	typ := uint8(a >> 8)
+	code := uint8(a)
+	var typeStr, codeStr string
+	switch typ {
+	case ICMPv6TypeDestinationUnreachable:
+		typeStr = "DestinationUnreachable"
+		switch code {
+		case 0:
+			codeStr = "NoRouteToDst"
+		case 1:
+			codeStr = "AdminProhibited"
+		case 3:
+			codeStr = "Address"
+		case 4:
+			codeStr = "Port"
+		}
+	case ICMPv6TypePacketTooBig:
+		typeStr = "PacketTooBig"
+	case ICMPv6TypeTimeExceeded:
+		typeStr = "TimeExceeded"
+		switch code {
+		case 0:
+			codeStr = "HopLimitExceeded"
+		case 1:
+			codeStr = "FragmentReassemblyTimeExceeded"
+		}
+	case ICMPv6TypeParameterProblem:
+		typeStr = "ParameterProblem"
+		switch code {
+		case 0:
+			codeStr = "ErroneousHeader"
+		case 1:
+			codeStr = "UnrecognizedNextHeader"
+		case 2:
+			codeStr = "UnrecognizedIPv6Option"
+		}
+	case ICMPv6TypeEchoRequest:
+		typeStr = "EchoRequest"
+	case ICMPv6TypeEchoReply:
+		typeStr = "EchoReply"
+	case ICMPv6TypeRouterSolicitation:
+		typeStr = "RouterSolicitation"
+	case ICMPv6TypeRouterAdvertisement:
+		typeStr = "RouterAdvertisement"
+	case ICMPv6TypeNeighborSolicitation:
+		typeStr = "NeighborSolicitation"
+	case ICMPv6TypeNeighborAdvertisement:
+		typeStr = "NeighborAdvertisement"
+	case ICMPv6TypeRedirect:
+		typeStr = "Redirect"
+	default:
+		typeStr = strconv.Itoa(int(typ))
 	}
-	typeStr := strInfo.typeStr
-	if strInfo.codeStr == nil && c == 0 {
-		// The ICMPv6 type does not make use of the code field
-		return fmt.Sprintf("%s", strInfo.typeStr)
-	}
-	if strInfo.codeStr == nil && c != 0 {
-		// The ICMPv6 type does not make use of the code field, but it is present anyway
-		return fmt.Sprintf("%s(Code: %d)", typeStr, c)
-	}
-	codeStr, ok := (*strInfo.codeStr)[c]
-	if !ok {
-		// We don't know this ICMPv6 code; print the numerical value
-		return fmt.Sprintf("%s(Code: %d)", typeStr, c)
+	if codeStr == "" {
+		codeStr = strconv.Itoa(int(code))
 	}
 	return fmt.Sprintf("%s(%s)", typeStr, codeStr)
-}
-
-func (a ICMPv6TypeCode) GoString() string {
-	t := reflect.TypeOf(a)
-	return fmt.Sprintf("%s(%d, %d)", t.String(), a.Type(), a.Code())
-}
-
-// SerializeTo writes the ICMPv6TypeCode value to the 'bytes' buffer.
-func (a ICMPv6TypeCode) SerializeTo(bytes []byte) {
-	binary.BigEndian.PutUint16(bytes, uint16(a))
-}
-
-// CreateICMPv6TypeCode is a convenience function to create an ICMPv6TypeCode
-// gopacket type from the ICMPv6 type and code values.
-func CreateICMPv6TypeCode(typ uint8, code uint8) ICMPv6TypeCode {
-	return ICMPv6TypeCode(binary.BigEndian.Uint16([]byte{typ, code}))
 }
 
 // ICMPv6 is the layer for IPv6 ICMP packet data
@@ -174,11 +105,7 @@ func (i *ICMPv6) LayerType() gopacket.LayerType { return LayerTypeICMPv6 }
 
 // DecodeFromBytes decodes the given bytes into this layer.
 func (i *ICMPv6) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	if len(data) < 8 {
-		df.SetTruncated()
-		return fmt.Errorf("ICMP layer less then 8 bytes for ICMPv6 packet")
-	}
-	i.TypeCode = CreateICMPv6TypeCode(data[0], data[1])
+	i.TypeCode = ICMPv6TypeCode(binary.BigEndian.Uint16(data[:2]))
 	i.Checksum = binary.BigEndian.Uint16(data[2:4])
 	i.TypeBytes = data[4:8]
 	i.BaseLayer = BaseLayer{data[:8], data[8:]}
@@ -198,7 +125,7 @@ func (i *ICMPv6) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Serialize
 	if err != nil {
 		return err
 	}
-	i.TypeCode.SerializeTo(bytes)
+	binary.BigEndian.PutUint16(bytes, uint16(i.TypeCode))
 	copy(bytes[4:8], i.TypeBytes)
 	if opts.ComputeChecksums {
 		bytes[2] = 0

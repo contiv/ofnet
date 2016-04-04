@@ -68,7 +68,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	ofnetAgent.WaitForSwitchConnection()
 
 	// Create a vlan for the endpoint
-	ofnetAgent.AddNetwork(1, 1, "")
+	ofnetAgent.AddNetwork(1, 1, "","default")
 
 	macAddr, _ := net.ParseMAC("00:01:02:03:04:05")
 	endpoint := EndpointInfo{
@@ -138,9 +138,8 @@ func TestPolicyAddDelete(t *testing.T) {
 		t.Errorf("Error getting flow entries. Err: %v", err)
 		return
 	}
-
 	// verify src group flow
-	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=write_metadata:0x640000/0x7fff0000")
+	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=write_metadata:0x100640000/0xff7fff0000")
 	if !ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
 		t.Errorf("Could not find the flow %s on ovs %s", srcGrpFlowMatch, brName)
 		return
@@ -149,7 +148,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	log.Infof("Found src group %s on ovs %s", srcGrpFlowMatch, brName)
 
 	// verify dst group flow
-	dstGrpFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=10.2.2.2 actions=write_metadata:0xc8/0xfffe")
+	dstGrpFlowMatch := fmt.Sprintf("priority=100,ip,metadata=0x100000000/0xff00000000,nw_dst=10.2.2.2 actions=write_metadata:0xc8/0xfffe")
 	if !ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
 		t.Errorf("Could not find the flow %s on ovs %s", dstGrpFlowMatch, brName)
 		return

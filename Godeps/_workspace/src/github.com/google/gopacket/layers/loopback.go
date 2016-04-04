@@ -9,7 +9,6 @@ package layers
 import (
 	"encoding/binary"
 	"fmt"
-
 	"github.com/google/gopacket"
 )
 
@@ -24,12 +23,7 @@ type Loopback struct {
 // LayerType returns LayerTypeLoopback.
 func (l *Loopback) LayerType() gopacket.LayerType { return LayerTypeLoopback }
 
-// DecodeFromBytes decodes the given bytes into this layer.
-func (l *Loopback) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	if len(data) < 4 {
-		return fmt.Errorf("Loopback packet too small")
-	}
-
+func decodeLoopback(data []byte, p gopacket.PacketBuilder) error {
 	// The protocol could be either big-endian or little-endian, we're
 	// not sure.  But we're PRETTY sure that the value is less than
 	// 256, so we can check the first two bytes.
@@ -42,27 +36,10 @@ func (l *Loopback) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) erro
 	if prot > 0xFF {
 		return fmt.Errorf("Invalid loopback protocol %q", data[:4])
 	}
-
-	l.Family = ProtocolFamily(prot)
-	l.BaseLayer = BaseLayer{data[:4], data[4:]}
-	return nil
-}
-
-// CanDecode returns the set of layer types that this DecodingLayer can decode.
-func (l *Loopback) CanDecode() gopacket.LayerClass {
-	return LayerTypeLoopback
-}
-
-// NextLayerType returns the layer type contained by this DecodingLayer.
-func (l *Loopback) NextLayerType() gopacket.LayerType {
-	return l.Family.LayerType()
-}
-
-func decodeLoopback(data []byte, p gopacket.PacketBuilder) error {
-	l := Loopback{}
-	if err := l.DecodeFromBytes(data, gopacket.NilDecodeFeedback); err != nil {
-		return err
+	l := &Loopback{
+		BaseLayer: BaseLayer{data[:4], data[4:]},
+		Family:    ProtocolFamily(prot),
 	}
-	p.AddLayer(&l)
+	p.AddLayer(l)
 	return p.NextDecoder(l.Family)
 }

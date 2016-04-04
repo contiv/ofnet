@@ -3,11 +3,9 @@ package hub
 
 import "sync"
 
-type Kind int
-
 // Event is an interface for published events.
 type Event interface {
-	Kind() Kind
+	Kind() int
 }
 
 // Hub is an event dispatcher, publishes events to the subscribers
@@ -15,7 +13,7 @@ type Event interface {
 // Optimized for publish calls.
 // The handlers may be called in order different than they are registered.
 type Hub struct {
-	subscribers map[Kind][]handler
+	subscribers map[int][]handler
 	m           sync.RWMutex
 	seq         uint64
 }
@@ -26,20 +24,20 @@ type handler struct {
 }
 
 // Subscribe registers f for the event of a specific kind.
-func (h *Hub) Subscribe(kind Kind, f func(Event)) (cancel func()) {
+func (h *Hub) Subscribe(kind int, f func(Event)) (cancel func()) {
 	var cancelled bool
 	h.m.Lock()
 	h.seq++
 	id := h.seq
 	if h.subscribers == nil {
-		h.subscribers = make(map[Kind][]handler)
+		h.subscribers = make(map[int][]handler)
 	}
 	h.subscribers[kind] = append(h.subscribers[kind], handler{id: id, f: f})
 	h.m.Unlock()
 	return func() {
 		h.m.Lock()
 		if cancelled {
-			return
+			panic("subscription is already cancelled")
 		}
 		cancelled = true
 		a := h.subscribers[kind]
@@ -71,7 +69,7 @@ func (h *Hub) Publish(e Event) {
 var DefaultHub Hub
 
 // Subscribe registers f for the event of a specific kind in the DefaultHub.
-func Subscribe(kind Kind, f func(Event)) (cancel func()) {
+func Subscribe(kind int, f func(Event)) (cancel func()) {
 	return DefaultHub.Subscribe(kind, f)
 }
 
