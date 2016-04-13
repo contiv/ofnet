@@ -67,21 +67,21 @@ func TestMain(m *testing.M) {
 
 	// Create the masters
 	for i := 0; i < NUM_MASTER; i++ {
-		vrtrMasters[i] = NewOfnetMaster(uint16(VRTR_MASTER_PORT + i))
+		vrtrMasters[i] = NewOfnetMaster("", uint16(VRTR_MASTER_PORT+i))
 		if vrtrMasters[i] == nil {
 			log.Fatalf("Error creating ofnet master for vrouter: %d", i)
 		}
 
 		log.Infof("Created vrouter Master: %v", vrtrMasters[i])
 
-		vxlanMasters[i] = NewOfnetMaster(uint16(VXLAN_MASTER_PORT + i))
+		vxlanMasters[i] = NewOfnetMaster("", uint16(VXLAN_MASTER_PORT+i))
 		if vxlanMasters[i] == nil {
 			log.Fatalf("Error creating ofnet master for vxlan: %d", i)
 		}
 
 		log.Infof("Created vxlan Master: %v", vxlanMasters[i])
 
-		vlanMasters[i] = NewOfnetMaster(uint16(VLAN_MASTER_PORT + i))
+		vlanMasters[i] = NewOfnetMaster("", uint16(VLAN_MASTER_PORT+i))
 		if vlanMasters[i] == nil {
 			log.Fatalf("Error creating ofnet master for vlan: %d", i)
 		}
@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 	}
 
 	for i := 0; i < NUM_VLRTR_MASTER; i++ {
-		vlrtrMaster[i] = NewOfnetMaster(uint16(VLRTR_MASTER_PORT))
+		vlrtrMaster[i] = NewOfnetMaster("", uint16(VLRTR_MASTER_PORT))
 		if vlrtrMaster[i] == nil {
 			log.Fatalf("Error creating ofnet master for vlrtr: %d", i)
 		}

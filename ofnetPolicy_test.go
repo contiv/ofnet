@@ -29,7 +29,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	rpcPort := uint16(9600)
 	ovsPort := uint16(9601)
 	lclIP := net.ParseIP("10.10.10.10")
-	ofnetAgent, err := NewOfnetAgent("","vrouter", lclIP, rpcPort, ovsPort)
+	ofnetAgent, err := NewOfnetAgent("", "vrouter", lclIP, rpcPort, ovsPort)
 	if err != nil {
 		t.Fatalf("Error creating ofnet agent. Err: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	ofnetAgent.MyAddr = "127.0.0.1"
 
 	// Create a Master
-	ofnetMaster := NewOfnetMaster(uint16(9602))
+	ofnetMaster := NewOfnetMaster("", uint16(9602))
 
 	defer func() { ofnetMaster.Delete() }()
 
