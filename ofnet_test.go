@@ -623,7 +623,7 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
 		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
 		if err != nil {
-			t.Errorf("Error adding Bgp Neighbor", err)
+			t.Errorf("Error adding Bgp Neighbor: %v", err)
 			return
 		}
 
@@ -642,21 +642,21 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 		//Check if neighbor is added to bgp server
 		bgpPeer, err := client.GetNeighbor(context.Background(), arg)
 		if err != nil {
-			t.Errorf("GetNeighbor failed ", err)
+			t.Errorf("GetNeighbor failed: %v", err)
 			return
 		}
 
 		//Delete BGP neighbor
 		err = vlrtrAgents[i].DeleteBgp()
 		if err != nil {
-			t.Errorf("Error Deleting Bgp Neighbor", err)
+			t.Errorf("Error Deleting Bgp Neighbor: %v", err)
 			return
 		}
 
 		//Check if neighbor is added to bgp server
 		bgpPeer, err = client.GetNeighbor(context.Background(), arg)
 		if bgpPeer != nil {
-			t.Errorf("Neighbor is not deleted ", err)
+			t.Errorf("Neighbor is not deleted: %v", err)
 			return
 		}
 	}
@@ -673,7 +673,7 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
 		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
 		if err != nil {
-			t.Errorf("Error adding Bgp Neighbor", err)
+			t.Errorf("Error adding Bgp Neighbor: %v", err)
 			return
 		}
 
@@ -772,7 +772,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
 		time.Sleep(5 * time.Second)
 		if err != nil {
-			t.Errorf("Error adding Bgp Neighbor", err)
+			t.Errorf("Error adding Bgp Neighbor: %v", err)
 			return
 		}
 		path := &api.Path{

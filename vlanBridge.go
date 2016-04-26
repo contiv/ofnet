@@ -17,12 +17,12 @@ package ofnet
 // This file implements the vlan bridging datapath
 
 import (
-	"net"
-	"net/rpc"
-        "fmt"
+	"fmt"
 	"github.com/contiv/ofnet/ofctrl"
 	"github.com/shaleman/libOpenflow/openflow13"
 	"github.com/shaleman/libOpenflow/protocol"
+	"net"
+	"net/rpc"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -378,7 +378,7 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 	case *protocol.ARP:
 		log.Debugf("Processing ARP packet on port %d: %+v", inPort, *t)
 		var arpIn protocol.ARP = *t
-             
+
 		switch arpIn.Operation {
 		case protocol.Type_Request:
 			// If it's a GARP packet, ignore processing
@@ -389,19 +389,19 @@ func (vl *VlanBridge) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 			// Lookup the Source and Dest IP in the endpoint table
 			//Vrf derivation logic :
-                        var vlan uint16
+			var vlan uint16
 			if vl.uplinkDb[inPort] != 0 {
 				//arp packet came in from uplink hence tagged
 				fmt.Println("the vlan id is ", pkt.VLANID.VID)
 				vlan = pkt.VLANID.VID
 			} else {
 				//arp packet came from local endpoints - derive vrf from inport
-                                if vl.agent.portVlanMap[inPort] != nil {
-				   vlan = *(vl.agent.portVlanMap[inPort])
-                                }else {
-                                   log.Debugf("Invalid port vlan mapping. Ignoring arp packet")
-                                   return
-                                } 
+				if vl.agent.portVlanMap[inPort] != nil {
+					vlan = *(vl.agent.portVlanMap[inPort])
+				} else {
+					log.Debugf("Invalid port vlan mapping. Ignoring arp packet")
+					return
+				}
 			}
 			srcEp := vl.agent.getEndpointByIpVlan(arpIn.IPSrc, vlan)
 			dstEp := vl.agent.getEndpointByIpVlan(arpIn.IPDst, vlan)

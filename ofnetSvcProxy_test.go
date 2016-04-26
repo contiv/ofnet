@@ -264,7 +264,7 @@ func TestSvcProxyInterface(t *testing.T) {
 	ofnetAgent.WaitForSwitchConnection()
 
 	// Create a vlan for the endpoint
-        ofnetAgent.AddNetwork(1, 1, "","default")
+	ofnetAgent.AddNetwork(1, 1, "", "default")
 
 	// add two endpoints
 	addEP(ofnetAgent, 12, "10.2.2.2", t)

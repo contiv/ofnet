@@ -16,9 +16,9 @@ package pqueue
 
 import (
 	"fmt"
-	"testing"
 	"math/rand"
 	"sort"
+	"testing"
 )
 
 // TestGetMin tests GetMin
