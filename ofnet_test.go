@@ -869,6 +869,153 @@ func TestVxlanFlowEntry(t *testing.T) {
 	}
 }
 
+// Test Vrouter Network Delete with Remote Endpoints
+func TestOfnetVrtrDeleteNwWithRemoteEP(t *testing.T) {
+	testVlan := 100
+	for iter := 0; iter < NUM_ITER; iter++ {
+
+		// Add Vrtr Network
+		for i := 0; i < NUM_AGENT; i++ {
+			err := vrtrAgents[i].AddNetwork(uint16(testVlan), uint32(testVlan), "", "default")
+			if err != nil {
+				t.Errorf("Error adding vlan %d. Err: %v", testVlan, err)
+				return
+			}
+		}
+
+		log.Infof("Finished adding network")
+
+		// Add Vrtr Endpoints
+		for i := 0; i < NUM_AGENT; i++ {
+			j := i + 1
+
+			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
+			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			endpoint := EndpointInfo{
+				PortNo:  uint32(NUM_AGENT + 2),
+				MacAddr: macAddr,
+				Vlan:    uint16(testVlan),
+				IpAddr:  ipAddr,
+			}
+
+			log.Infof("Installing local vrouter endpoint: %+v", endpoint)
+
+			// Install the local endpoint
+			err := vrtrAgents[i].AddLocalEndpoint(endpoint)
+			if err != nil {
+				t.Fatalf("Error installing endpoint: %+v. Err: %v", endpoint, err)
+				return
+			}
+		}
+
+		log.Infof("Finished adding endpoints")
+
+		for i := 0; i < NUM_AGENT; i++ {
+			j := i + 1
+			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
+			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			endpoint := EndpointInfo{
+				PortNo:  uint32(NUM_AGENT + 2),
+				MacAddr: macAddr,
+				Vlan:    uint16(testVlan),
+				IpAddr:  ipAddr,
+			}
+
+			log.Infof("Deleting local vrouter endpoint: %+v", endpoint)
+
+			// Install the local endpoint
+			err := vrtrAgents[i].RemoveLocalEndpoint(uint32(NUM_AGENT + 2))
+			if err != nil {
+				t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
+				return
+			}
+
+			// Remove network before endpoint cleanup on other agents
+			err = vrtrAgents[i].RemoveNetwork(uint16(testVlan), uint32(testVlan), "", "default")
+			if err != nil {
+				t.Errorf("Error removing vlan %d. Err: %v", testVlan, err)
+				return
+			}
+
+		}
+
+		log.Infof("All networks are deleted")
+	}
+}
+
+// Test Vxlan Network Delete with Remote Endpoints
+func TestOfnetVxlanDeleteNwWithRemoteEP(t *testing.T) {
+	testVlan := 100
+	for iter := 0; iter < NUM_ITER; iter++ {
+		// Add vxlan network
+		for i := 0; i < NUM_AGENT; i++ {
+
+			// Add Vxlan Network and Endpoints
+			err := vxlanAgents[i].AddNetwork(uint16(testVlan), uint32(testVlan), "", "default")
+			if err != nil {
+				t.Errorf("Error adding vlan %d. Err: %v", testVlan, err)
+				return
+			}
+		}
+
+		// Add vxlan endpoints
+		for i := 0; i < NUM_AGENT; i++ {
+			j := i + 1
+
+			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
+			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			endpoint := EndpointInfo{
+				PortNo:  uint32(NUM_AGENT + 2),
+				MacAddr: macAddr,
+				Vlan:    uint16(testVlan),
+				IpAddr:  ipAddr,
+			}
+
+			log.Infof("Installing local vxlan endpoint: %+v", endpoint)
+
+			// Install the local endpoint
+			err := vxlanAgents[i].AddLocalEndpoint(endpoint)
+			if err != nil {
+				t.Fatalf("Error installing endpoint: %+v. Err: %v", endpoint, err)
+				return
+			}
+		}
+
+		log.Infof("Finished adding network and endpoints")
+
+		for i := 0; i < NUM_AGENT; i++ {
+			j := i + 1
+			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
+			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			endpoint := EndpointInfo{
+				PortNo:  uint32(NUM_AGENT + 2),
+				MacAddr: macAddr,
+				Vlan:    uint16(testVlan),
+				IpAddr:  ipAddr,
+			}
+
+			log.Infof("Deleting local vxlan endpoint: %+v", endpoint)
+
+			// Install the local endpoint
+			err := vxlanAgents[i].RemoveLocalEndpoint(uint32(NUM_AGENT + 2))
+			if err != nil {
+				t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
+				return
+			}
+
+			// Remove network before endpoint cleanup on other agents
+			err = vxlanAgents[i].RemoveNetwork(uint16(testVlan), uint32(testVlan), "", "default")
+			if err != nil {
+				t.Errorf("Error removing vlan %d. Err: %v", testVlan, err)
+				return
+			}
+
+		}
+
+		log.Infof("All networks are deleted")
+	}
+}
+
 // Wait for debug and cleanup
 func TestWaitAndCleanup(t *testing.T) {
 	time.Sleep(1 * time.Second)
