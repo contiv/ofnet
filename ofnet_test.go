@@ -375,11 +375,16 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			j := i + 1
 			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
 			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			var ipv6Addr net.IP
+			if j%2 == 0 {
+				ipv6Addr = net.ParseIP(fmt.Sprintf("2016::%d:%d", j, j))
+			}
 			endpoint := EndpointInfo{
-				PortNo:  uint32(NUM_AGENT + 2),
-				MacAddr: macAddr,
-				Vlan:    1,
-				IpAddr:  ipAddr,
+				PortNo:   uint32(NUM_AGENT + 2),
+				MacAddr:  macAddr,
+				Vlan:     1,
+				IpAddr:   ipAddr,
+				Ipv6Addr: ipv6Addr,
 			}
 
 			log.Infof("Installing local vrouter endpoint: %+v", endpoint)
@@ -410,8 +415,16 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 				if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 					t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
 				}
-
 				log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
+
+				if k%2 == 0 {
+					ipv6FlowMatch := fmt.Sprintf("priority=100,ipv6,metadata=0x100000000/0xff00000000,ipv6_dst=2016::%d:%d", k, k)
+					if !ofctlFlowMatch(flowList, ipTableId, ipv6FlowMatch) {
+						t.Errorf("Could not find IPv6 route %s on ovs %s", ipv6FlowMatch, brName)
+						return
+					}
+					log.Infof("Found IPv6 ipflow %s on ovs %s", ipv6FlowMatch, brName)
+				}
 			}
 		}
 
@@ -421,11 +434,16 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			j := i + 1
 			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
 			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			var ipv6Addr net.IP
+			if j%2 == 0 {
+				ipv6Addr = net.ParseIP(fmt.Sprintf("2016::%d:%d", j, j))
+			}
 			endpoint := EndpointInfo{
-				PortNo:  uint32(NUM_AGENT + 2),
-				MacAddr: macAddr,
-				Vlan:    1,
-				IpAddr:  ipAddr,
+				PortNo:   uint32(NUM_AGENT + 2),
+				MacAddr:  macAddr,
+				Vlan:     1,
+				IpAddr:   ipAddr,
+				Ipv6Addr: ipv6Addr,
 			}
 
 			log.Infof("Deleting local vrouter endpoint: %+v", endpoint)
@@ -456,6 +474,12 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 				if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 					t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
 				}
+				if k%2 == 0 {
+					ipv6FlowMatch := fmt.Sprintf("priority=100,ipv6,metadata=0x100000000/0xff00000000,ipv6_dst=2016::%d:%d", k, k)
+					if ofctlFlowMatch(flowList, ipTableId, ipv6FlowMatch) {
+						t.Errorf("Still found the flow %s on ovs %s", ipv6FlowMatch, brName)
+					}
+				}
 			}
 		}
 
@@ -470,11 +494,16 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 			j := i + 1
 			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
 			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			var ipv6Addr net.IP
+			if j%2 == 0 {
+				ipv6Addr = net.ParseIP(fmt.Sprintf("2016::%d:%d", j, j))
+			}
 			endpoint := EndpointInfo{
-				PortNo:  uint32(NUM_AGENT + 2),
-				MacAddr: macAddr,
-				Vlan:    1,
-				IpAddr:  ipAddr,
+				PortNo:   uint32(NUM_AGENT + 2),
+				MacAddr:  macAddr,
+				Vlan:     1,
+				IpAddr:   ipAddr,
+				Ipv6Addr: ipv6Addr,
 			}
 
 			log.Infof("Installing local vxlan endpoint: %+v", endpoint)
@@ -516,11 +545,16 @@ func TestOfnetVxlanAddDelete(t *testing.T) {
 			j := i + 1
 			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
 			ipAddr := net.ParseIP(fmt.Sprintf("10.10.%d.%d", j, j))
+			var ipv6Addr net.IP
+			if j%2 == 0 {
+				ipv6Addr = net.ParseIP(fmt.Sprintf("2016::%d:%d", j, j))
+			}
 			endpoint := EndpointInfo{
-				PortNo:  uint32(NUM_AGENT + 2),
-				MacAddr: macAddr,
-				Vlan:    1,
-				IpAddr:  ipAddr,
+				PortNo:   uint32(NUM_AGENT + 2),
+				MacAddr:  macAddr,
+				Vlan:     1,
+				IpAddr:   ipAddr,
+				Ipv6Addr: ipv6Addr,
 			}
 
 			log.Infof("Deleting local vxlan endpoint: %+v", endpoint)
@@ -679,11 +713,13 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 
 		macAddr, _ := net.ParseMAC("02:02:01:06:06:06")
 		ipAddr := net.ParseIP("20.20.20.20")
+		ipv6Addr := net.ParseIP("2020::20:20")
 		endpoint := EndpointInfo{
-			PortNo:  uint32(NUM_AGENT + 3),
-			MacAddr: macAddr,
-			Vlan:    1,
-			IpAddr:  ipAddr,
+			PortNo:   uint32(NUM_AGENT + 3),
+			MacAddr:  macAddr,
+			Vlan:     1,
+			IpAddr:   ipAddr,
+			Ipv6Addr: ipv6Addr,
 		}
 
 		log.Infof("Installing local vlrouter endpoint: %+v", endpoint)
@@ -719,15 +755,25 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 
 		log.Infof("Found ipflow %s on ovs %s", ipFlowMatch, brName)
 
+		// verify IPv6 flow entry exists
+		ipv6FlowMatch := fmt.Sprintf("priority=100,ipv6,ipv6_dst=2020::20:20")
+		if !ofctlFlowMatch(flowList, ipTableId, ipv6FlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", ipv6FlowMatch, brName)
+			return
+		}
+		log.Infof("Found ipv6 flow %s on ovs %s", ipv6FlowMatch, brName)
+
 		log.Infof("Adding Vlrouter endpoint successful.\n Testing Delete")
 
 		macAddr, _ = net.ParseMAC("02:02:01:06:06:06")
 		ipAddr = net.ParseIP("20.20.20.20")
+		ipv6Addr = net.ParseIP("2020::20:20")
 		endpoint = EndpointInfo{
-			PortNo:  uint32(NUM_AGENT + 3),
-			MacAddr: macAddr,
-			Vlan:    1,
-			IpAddr:  ipAddr,
+			PortNo:   uint32(NUM_AGENT + 3),
+			MacAddr:  macAddr,
+			Vlan:     1,
+			IpAddr:   ipAddr,
+			Ipv6Addr: ipv6Addr,
 		}
 
 		log.Infof("Deleting local vlrouter endpoint: %+v", endpoint)
@@ -753,6 +799,13 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 		ipTableId = IP_TBL_ID
 		if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 			t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
+		}
+		// verify IPv6 flow entry exists
+		ipv6FlowMatch = fmt.Sprintf("priority=100,ipv6,ipv6_dst=2020::20:20")
+		ipTableId = IP_TBL_ID
+		if ofctlFlowMatch(flowList, ipTableId, ipv6FlowMatch) {
+			t.Errorf("Still found the flow %s on ovs %s", ipv6FlowMatch, brName)
+			return
 		}
 		err = vlrtrAgents[i].DeleteBgp()
 		log.Infof("Verified all flows are deleted")
