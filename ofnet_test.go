@@ -44,6 +44,7 @@ const VLAN_OVS_PORT = 9351
 const VLRTR_MASTER_PORT = 9401
 const VLRTR_RPC_PORT = 9421
 const VLRTR_OVS_PORT = 9451
+const GARP_EXPIRY_DELAY = (GARPRepeats + 1) * GARPDELAY
 
 var vrtrMasters [NUM_MASTER]*OfnetMaster
 var vxlanMasters [NUM_MASTER]*OfnetMaster
@@ -1067,6 +1068,96 @@ func TestOfnetVxlanDeleteNwWithRemoteEP(t *testing.T) {
 
 		log.Infof("All networks are deleted")
 	}
+}
+
+func vlanAddEP(epID, epgID int, add bool) error {
+	macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", epID, epID, epID))
+	ipAddr := net.ParseIP(fmt.Sprintf("10.11.%d.%d", epID, epID))
+	endpoint := EndpointInfo{
+		PortNo:            uint32(NUM_AGENT + epID),
+		MacAddr:           macAddr,
+		Vlan:              uint16(epgID),
+		EndpointGroup:     epgID,
+		EndpointGroupVlan: uint16(epgID),
+		IpAddr:            ipAddr,
+	}
+
+	if add {
+		return vlanAgents[0].AddLocalEndpoint(endpoint)
+	}
+	return vlanAgents[0].RemoveLocalEndpoint(uint32(NUM_AGENT + epID))
+}
+
+// TestOfnetVlanGARPInject verifies GARP injection
+func TestOfnetVlanGARPInject(t *testing.T) {
+
+	err1 := vlanAgents[0].AddNetwork(uint16(5), uint32(5), "", "test1")
+	err2 := vlanAgents[0].AddNetwork(uint16(6), uint32(6), "", "test1")
+
+	if err1 != nil || err2 != nil {
+		t.Errorf("Error adding vlan %v, %v", err1, err2)
+		return
+	}
+
+	// Add one endpoint
+	err := vlanAddEP(5, 5, true)
+	if err != nil {
+		t.Errorf("Error adding EP")
+		return
+	}
+
+	// Inject a GARP
+	var resp bool
+	vlanAgents[0].InjectGARPs(5, &resp)
+	time.Sleep(5 * time.Second)
+
+	// Look for stats update
+	count, ok := vlanAgents[0].GARPStats[5]
+	if !ok || count == 0 {
+		t.Errorf("GARP stats wasn't updated ok: %v count: %v", ok, count)
+		return
+	}
+
+	// Add two endpoints to another epg
+	vlanAddEP(6, 6, true)
+	vlanAddEP(7, 6, true)
+	// Inject GARP on the new epg
+	vlanAgents[0].InjectGARPs(6, &resp)
+	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
+	count, _ = vlanAgents[0].GARPStats[5]
+	if count != GARPRepeats {
+		t.Errorf("GARP stats incorrect for epg5 count: %v exp: %v map:%+v",
+			count, GARPRepeats, vlanAgents[0].GARPStats)
+		return
+	}
+
+	count, _ = vlanAgents[0].GARPStats[6]
+	if count != 2*GARPRepeats {
+		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
+			count, 2*GARPRepeats)
+		return
+	}
+
+	// delete one of the eps
+	vlanAddEP(6, 6, false)
+	vlanAgents[0].InjectGARPs(6, &resp)
+	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
+	count, _ = vlanAgents[0].GARPStats[5]
+	if count != GARPRepeats {
+		t.Errorf("GARP stats incorrect for epg5 count: %v exp: %v",
+			count, GARPRepeats)
+		return
+	}
+
+	count, _ = vlanAgents[0].GARPStats[6]
+	if count != 3*GARPRepeats {
+		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
+			count, 3*GARPRepeats)
+		return
+	}
+	vlanAddEP(6, 7, false)
+	vlanAddEP(5, 5, false)
+
 }
 
 // Wait for debug and cleanup
