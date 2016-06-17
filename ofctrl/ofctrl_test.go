@@ -25,6 +25,7 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/contiv/ofnet/ovsdbDriver"
+	"github.com/shaleman/libOpenflow/openflow13"
 )
 
 type OfActor struct {
@@ -46,6 +47,9 @@ func (o *OfActor) SwitchConnected(sw *OFSwitch) {
 	o.Switch = sw
 
 	o.isSwitchConnected = true
+}
+
+func (o *OfActor) MultipartReply(sw *OFSwitch, rep *openflow13.MultipartReply) {
 }
 
 func (o *OfActor) SwitchDisconnected(sw *OFSwitch) {

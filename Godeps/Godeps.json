@@ -1,6 +1,7 @@
 {
 	"ImportPath": "github.com/contiv/ofnet",
 	"GoVersion": "go1.5",
+	"GodepVersion": "v66",
 	"Packages": [
 		"./..."
 	],
@@ -79,19 +80,19 @@
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/common",
-			"Rev": "94f338a137b50db6fa7d32e8cc3b406306616280"
+			"Rev": "89b83cfc0c8fb9d2872729b7484a9f592f074c53"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/openflow13",
-			"Rev": "94f338a137b50db6fa7d32e8cc3b406306616280"
+			"Rev": "89b83cfc0c8fb9d2872729b7484a9f592f074c53"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/protocol",
-			"Rev": "94f338a137b50db6fa7d32e8cc3b406306616280"
+			"Rev": "89b83cfc0c8fb9d2872729b7484a9f592f074c53"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/util",
-			"Rev": "94f338a137b50db6fa7d32e8cc3b406306616280"
+			"Rev": "89b83cfc0c8fb9d2872729b7484a9f592f074c53"
 		},
 		{
 			"ImportPath": "github.com/vishvananda/netlink",
