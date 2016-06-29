@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/contiv/ofnet/ovsdbDriver"
+	"github.com/vishvananda/netlink"
 
 	log "github.com/Sirupsen/logrus"
 	api "github.com/osrg/gobgp/api"
@@ -1106,9 +1107,7 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 		return
 	}
 
-	// Inject a GARP
 	var resp bool
-	vlanAgents[0].InjectGARPs(5, &resp)
 	time.Sleep(5 * time.Second)
 
 	// Look for stats update
@@ -1120,9 +1119,8 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 
 	// Add two endpoints to another epg
 	vlanAddEP(6, 6, true)
+	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
 	vlanAddEP(7, 6, true)
-	// Inject GARP on the new epg
-	vlanAgents[0].InjectGARPs(6, &resp)
 	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
 	count, _ = vlanAgents[0].GARPStats[5]
 	if count != GARPRepeats {
@@ -1132,9 +1130,9 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 	}
 
 	count, _ = vlanAgents[0].GARPStats[6]
-	if count != 2*GARPRepeats {
+	if count != 3*GARPRepeats {
 		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
-			count, 2*GARPRepeats)
+			count, 3*GARPRepeats)
 		return
 	}
 
@@ -1150,12 +1148,47 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 	}
 
 	count, _ = vlanAgents[0].GARPStats[6]
-	if count != 3*GARPRepeats {
+	if count != 4*GARPRepeats {
 		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
-			count, 3*GARPRepeats)
+			count, 4*GARPRepeats)
 		return
 	}
-	vlanAddEP(6, 7, false)
+
+	// Test link status triggered GARP
+	vlanAgents[0].AddUplink(88, "foo")
+	time.Sleep(time.Second)
+	link := &netlink.Veth{netlink.LinkAttrs{Name: "foo", TxQLen: 100,
+		MTU: 1400}, "bar"}
+	if err := netlink.LinkAdd(link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := netlink.LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
+	count, _ = vlanAgents[0].GARPStats[6]
+	if count != 5*GARPRepeats {
+		netlink.LinkDel(link)
+		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
+			count, 5*GARPRepeats)
+		return
+	}
+
+	count, _ = vlanAgents[0].GARPStats[5]
+	if count != 2*GARPRepeats {
+		netlink.LinkDel(link)
+		t.Errorf("GARP stats incorrect for epg5 count: %v exp: %v",
+			count, 2*GARPRepeats)
+		return
+	}
+
+	if err := netlink.LinkDel(link); err != nil {
+		t.Fatal(err)
+	}
+
+	vlanAddEP(7, 6, false)
 	vlanAddEP(5, 5, false)
 
 }
