@@ -45,7 +45,11 @@ const VLAN_OVS_PORT = 9351
 const VLRTR_MASTER_PORT = 9401
 const VLRTR_RPC_PORT = 9421
 const VLRTR_OVS_PORT = 9451
+const HB_OVS_PORT = 9551
 const GARP_EXPIRY_DELAY = (GARPRepeats + 1) * GARPDELAY
+const NUM_HOST_BRIDGE = 1
+const TOTAL_AGENTS = (3 * NUM_AGENT) + NUM_VLRTR_AGENT + NUM_HOST_BRIDGE
+const HB_AGENT_INDEX = (3 * NUM_AGENT) + NUM_VLRTR_AGENT
 
 var vrtrMasters [NUM_MASTER]*OfnetMaster
 var vxlanMasters [NUM_MASTER]*OfnetMaster
@@ -55,7 +59,8 @@ var vrtrAgents [NUM_AGENT]*OfnetAgent
 var vxlanAgents [NUM_AGENT]*OfnetAgent
 var vlanAgents [NUM_AGENT]*OfnetAgent
 var vlrtrAgents [NUM_VLRTR_AGENT]*OfnetAgent
-var ovsDrivers [(3 * NUM_AGENT) + NUM_VLRTR_AGENT]*ovsdbDriver.OvsDriver
+var ovsDrivers [TOTAL_AGENTS]*ovsdbDriver.OvsDriver
+var hostBridges [NUM_HOST_BRIDGE]*HostBridge
 
 var localIpList []string
 
@@ -173,6 +178,20 @@ func TestMain(m *testing.M) {
 		log.Infof("Created vlrtr ofnet agent: %v", vlrtrAgents[i])
 	}
 
+	for i := 0; i < NUM_HOST_BRIDGE; i++ {
+		brName := "hostBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(HB_OVS_PORT + i)
+		driver := ovsdbDriver.NewOvsDriver(brName)
+		portName := "inb0" + fmt.Sprintf("%d", i)
+		driver.CreatePort(portName, "internal", uint(1+i))
+		hostBridges[i], err = NewHostBridge(brName, "hostbridge", ovsPort)
+		if err != nil {
+			log.Fatalf("Error creating ofnet agent. Err: %v", err)
+		}
+
+		log.Infof("Created hostBridge agent: %v", hostBridges[i])
+	}
+
 	masterInfo := OfnetNode{
 		HostAddr: "127.0.0.1",
 	}
@@ -287,6 +306,18 @@ func TestMain(m *testing.M) {
 		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
 		ovsPort := uint16(VLRTR_OVS_PORT + i)
 		j := (3 * NUM_AGENT) + i
+		ovsDrivers[j] = ovsdbDriver.NewOvsDriver(brName)
+		err := ovsDrivers[j].AddController("127.0.0.1", ovsPort)
+		if err != nil {
+			log.Fatalf("Error adding controller to ovs: %s", brName)
+		}
+	}
+
+	// Create OVS switches and connect them to hostbridge agents
+	for i := 0; i < NUM_HOST_BRIDGE; i++ {
+		brName := "hostBridge" + fmt.Sprintf("%d", i)
+		ovsPort := uint16(HB_OVS_PORT + i)
+		j := HB_AGENT_INDEX + i
 		ovsDrivers[j] = ovsdbDriver.NewOvsDriver(brName)
 		err := ovsDrivers[j].AddController("127.0.0.1", ovsPort)
 		if err != nil {
@@ -1173,7 +1204,6 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 		netlink.LinkDel(link)
 		t.Errorf("GARP stats incorrect for epg6 count: %v exp: %v",
 			count, 5*GARPRepeats)
-		return
 	}
 
 	count, _ = vlanAgents[0].GARPStats[5]
@@ -1193,6 +1223,100 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 
 }
 
+// TestOfnetHostBridge tests the host gateway bridge
+func TestOfnetHostBridge(t *testing.T) {
+
+	for i := 0; i < NUM_HOST_BRIDGE; i++ {
+		macAddr, _ := net.ParseMAC("02:02:01:AB:CD:EF")
+		ipAddr := net.ParseIP("20.20.33.33")
+		endpoint := EndpointInfo{
+			PortNo:  uint32(NUM_AGENT + 3),
+			MacAddr: macAddr,
+			Vlan:    1,
+			IpAddr:  ipAddr,
+		}
+
+		log.Infof("Installing local host bridge endpoint: %+v", endpoint)
+
+		// Install the local endpoint
+		err := hostBridges[i].AddHostPort(endpoint)
+		if err != nil {
+			t.Fatalf("Error installing endpoint: %+v. Err: %v", endpoint, err)
+			return
+		}
+
+		log.Infof("Finished adding local host bridge endpoint")
+
+		// verify all ovs switches have this route
+		brName := "hostBridge" + fmt.Sprintf("%d", i)
+		flowList, err := ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+			return
+		}
+
+		// verify flow entry exists
+		gwInFlowMatch := fmt.Sprintf("priority=100,in_port=%d", NUM_AGENT+3)
+		if !ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwInFlowMatch) {
+			t.Errorf("Could not find the flow %s on ovs %s", gwInFlowMatch, brName)
+			return
+		}
+
+		log.Infof("Found gwInFlowMatch %s on ovs %s", gwInFlowMatch, brName)
+		// verify flow entry exists
+		gwOutFlowMatch := fmt.Sprintf("priority=100,dl_dst=%s", macAddr)
+		if !ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwOutFlowMatch) {
+			t.Errorf("Could not find the flow %s on ovs %s", gwOutFlowMatch, brName)
+			return
+		}
+
+		log.Infof("Found gwOutFlowMatch %s on ovs %s", gwOutFlowMatch, brName)
+
+		// verify flow entry exists
+		gwARPFlowMatch := fmt.Sprintf("priority=100,arp")
+		if !ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwARPFlowMatch) {
+			t.Errorf("Could not find the flow %s on ovs %s", gwARPFlowMatch, brName)
+			t.Errorf("##FlowList: %v", flowList)
+			return
+		}
+
+		log.Infof("Found gwARPFlowMatch %s on ovs %s", gwARPFlowMatch, brName)
+		log.Infof("##FlowList: %v", flowList)
+
+		// Remove the gw endpoint
+		err = hostBridges[i].DelHostPort(uint32(NUM_AGENT + 3))
+		if err != nil {
+			t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
+			return
+		}
+
+		log.Infof("Deleted endpoints. Verifying they are gone")
+
+		// verify flows are deleted
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+
+		if ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwInFlowMatch) {
+			t.Errorf("The flow %s not deleted from ovs %s", gwInFlowMatch, brName)
+			return
+		}
+
+		if ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwOutFlowMatch) {
+			t.Errorf("The flow %s not deleted from ovs %s", gwOutFlowMatch, brName)
+			return
+		}
+
+		if ofctlFlowMatch(flowList, MAC_DEST_TBL_ID, gwARPFlowMatch) {
+			t.Errorf("The flow %s not deleted from ovs %s", gwARPFlowMatch, brName)
+			return
+		}
+
+		log.Infof("Verified all flows are deleted")
+	}
+}
+
 // Wait for debug and cleanup
 func TestWaitAndCleanup(t *testing.T) {
 	time.Sleep(1 * time.Second)
@@ -1205,6 +1329,9 @@ func TestWaitAndCleanup(t *testing.T) {
 	}
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
 		vlrtrAgents[i].Delete()
+	}
+	for i := 0; i < NUM_HOST_BRIDGE; i++ {
+		hostBridges[i].Delete()
 	}
 
 	for i := 0; i < NUM_AGENT; i++ {
@@ -1235,6 +1362,14 @@ func TestWaitAndCleanup(t *testing.T) {
 		brName := "vlrtrBridge" + fmt.Sprintf("%d", i)
 		log.Infof("Deleting OVS bridge: %s", brName)
 		err := ovsDrivers[(3*NUM_AGENT)+i].DeleteBridge(brName)
+		if err != nil {
+			t.Errorf("Error deleting the bridge. Err: %v", err)
+		}
+	}
+	for i := 0; i < NUM_HOST_BRIDGE; i++ {
+		brName := "hostBridge" + fmt.Sprintf("%d", i)
+		log.Infof("Deleting OVS bridge: %s", brName)
+		err := ovsDrivers[HB_AGENT_INDEX].DeleteBridge(brName)
 		if err != nil {
 			t.Errorf("Error deleting the bridge. Err: %v", err)
 		}
