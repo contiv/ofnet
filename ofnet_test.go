@@ -1186,13 +1186,13 @@ func TestOfnetVlanGARPInject(t *testing.T) {
 	}
 
 	// Test link status triggered GARP
-	vlanAgents[0].AddUplink(88, "foo")
-	time.Sleep(time.Second)
 	link := &netlink.Veth{netlink.LinkAttrs{Name: "foo", TxQLen: 100,
 		MTU: 1400}, "bar"}
 	if err := netlink.LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
+	vlanAgents[0].AddUplink(88, "foo")
+	time.Sleep(time.Second)
 
 	if err := netlink.LinkSetUp(link); err != nil {
 		t.Fatal(err)
