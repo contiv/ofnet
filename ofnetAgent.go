@@ -220,6 +220,16 @@ func (self *OfnetAgent) getEndpointByIpVrf(ipAddr net.IP, vrf string) *OfnetEndp
 	return nil
 }
 
+// GetLocalEndpoint finds the endpoint based on the port number
+func (self *OfnetAgent) getLocalEndpoint(portNo uint32) *OfnetEndpoint {
+	ep, found := self.localEndpointDb[portNo]
+	if found {
+		return ep
+	}
+
+	return nil
+}
+
 // Delete cleans up an ofnet agent
 func (self *OfnetAgent) Delete() error {
 	// Disconnect from the switch

@@ -29,6 +29,37 @@ import (
 	"github.com/contiv/ofnet/ovsdbDriver"
 )
 
+const (
+	testEP1port = 12
+	testEP2port = 13
+	testEP4port = 14
+	testEP1ip   = "10.2.2.2"
+	testEP2ip   = "10.2.2.3"
+	testEP4ip   = "10.2.2.4"
+)
+
+func addRemoteEP(oa *OfnetAgent, macByte, vlan uint32, ipAddr string, t *testing.T) {
+	macStr := fmt.Sprintf("00:01:02:03:04:%d", macByte)
+	endpoint := &OfnetEndpoint{
+		EndpointGroup: 100,
+		MacAddrStr:    macStr,
+		Vlan:          uint16(vlan),
+		IpAddr:        net.ParseIP(ipAddr),
+		OriginatorIp:  net.ParseIP("200.1.1.200"),
+	}
+
+	endpoint.EndpointID = oa.getEndpointIdByIpVlan(endpoint.IpAddr, endpoint.Vlan)
+
+	log.Infof("Adding remote endpoint: %+v", endpoint)
+
+	ignore := false
+	// Add an Endpoint
+	err := oa.EndpointAdd(endpoint, &ignore)
+	if err != nil {
+		t.Fatalf("Error adding endpoint. Err: %v", err)
+	}
+}
+
 func addEP(oa *OfnetAgent, portNo uint32, ipAddr string, t *testing.T) {
 	macStr := fmt.Sprintf("00:01:02:03:04:%d", portNo)
 	macAddr, _ := net.ParseMAC(macStr)
@@ -49,7 +80,7 @@ func addEP(oa *OfnetAgent, portNo uint32, ipAddr string, t *testing.T) {
 	}
 }
 
-func getIPPkt(ipSrc, ipDst string) *ofctrl.PacketIn {
+func getIPPkt(ipSrc, ipDst string, portNo uint32) *ofctrl.PacketIn {
 	p := new(ofctrl.PacketIn)
 	p.Header = openflow13.NewOfp13Header()
 	p.Header.Type = openflow13.Type_PacketIn
@@ -58,6 +89,9 @@ func getIPPkt(ipSrc, ipDst string) *ofctrl.PacketIn {
 	p.TableId = 0
 	p.Cookie = 0
 	p.Match = *openflow13.NewMatch()
+	inportField := openflow13.NewInPortField(portNo)
+	m := &p.Match
+	m.AddField(*inportField)
 	ip := protocol.NewIPv4()
 	ip.Version = 4
 	ip.IHL = 5
@@ -100,7 +134,15 @@ func verifyWatchRemoved(t *testing.T, brName string) {
 
 }
 
-func verifyNATRemoved(t *testing.T, brName string) {
+func verifyWatchPresent(t *testing.T, brName string) {
+	// verify watch flows are still there
+	wFlow1 := fmt.Sprintf("priority=10,tcp,nw_dst=10.254.0.10 actions=CONTROLLER")
+	wFlow2 := fmt.Sprintf("priority=10,udp,nw_dst=10.254.0.10 actions=CONTROLLER")
+	checkFlows(t, brName, "Verify tcp watch flows", wFlow1, SRV_PROXY_DNAT_TBL_ID)
+	checkFlows(t, brName, "Verify udp watch flows", wFlow2, SRV_PROXY_DNAT_TBL_ID)
+}
+
+func verifyNATRemoved(t *testing.T, brName, provIP string) {
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
@@ -108,24 +150,18 @@ func verifyNATRemoved(t *testing.T, brName string) {
 	}
 
 	matchStr := "set_field:10.254.0.10->ip_src"
-	if ofctlFlowMatch(flowList, SRV_PROXY_SNAT_TBL_ID, matchStr) {
+	if ofctlRawFlowMatch(flowList, matchStr) {
 		t.Errorf("SNAT flows still present %s", flowList)
 	} else {
 		log.Infof("SNAT flows removed as expected")
 	}
 
-	matchStr = "set_field:20.1.1.22->ip_dst"
-	if ofctlFlowMatch(flowList, SRV_PROXY_DNAT_TBL_ID, matchStr) {
+	matchStr = fmt.Sprintf("set_field:%s->ip_dst", provIP)
+	if ofctlRawFlowMatch(flowList, matchStr) {
 		t.Errorf("DNAT flows still present %s", flowList)
 	} else {
 		log.Infof("DNAT flows removed as expected")
 	}
-
-	// verify watch flows are still there
-	wFlow1 := fmt.Sprintf("priority=10,tcp,nw_dst=10.254.0.10 actions=CONTROLLER")
-	wFlow2 := fmt.Sprintf("priority=10,udp,nw_dst=10.254.0.10 actions=CONTROLLER")
-	checkFlows(t, brName, "Verify tcp watch flows", wFlow1, SRV_PROXY_DNAT_TBL_ID)
-	checkFlows(t, brName, "Verify udp watch flows", wFlow2, SRV_PROXY_DNAT_TBL_ID)
 }
 
 func verifyEPDel(t *testing.T, brName, epIP string) {
@@ -169,39 +205,55 @@ func ofctlRawFlowMatch(flowList []string, mtStr string) bool {
 	return false
 }
 
-func verifyLB(t *testing.T, brName string) {
+func verifyNoMacRewrite(t *testing.T, brName string, provMacs []string) {
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
 		t.Errorf("Error getting flow entries. Err: %v", err)
 		return
 	}
 
-	matchStr := "set_field:20.1.1.23->ip_dst"
-	if ofctlRawFlowMatch(flowList, matchStr) {
-		log.Infof("DNAT to 20.1.1.23 found")
-	} else {
-		t.Errorf("DNAT flows to 20.1.1.23 not found %s", flowList)
+	for _, provMac := range provMacs {
+		matchStr := fmt.Sprintf("set_field:%s->eth_dst", provMac)
+		if ofctlRawFlowMatch(flowList, matchStr) {
+			t.Errorf("Unexpected MAC rewrite flows to %s FOUND %s",
+				provMac, flowList)
+		} else {
+			log.Infof("MAC rewrite to %s not found, as expected",
+				provMac)
+		}
+	}
+}
+
+func verifyLB(t *testing.T, brName string, provIPs, provMacs []string) {
+	flowList, err := ofctlFlowDump(brName)
+	if err != nil {
+		t.Errorf("Error getting flow entries. Err: %v", err)
+		return
 	}
 
-	matchStr = "set_field:20.1.1.24->ip_dst"
-	if ofctlRawFlowMatch(flowList, matchStr) {
-		log.Infof("DNAT to 20.1.24 found")
-	} else {
-		t.Errorf("DNAT flows to 20.1.1.24 not found %s", flowList)
+	for _, provIP := range provIPs {
+		matchStr := fmt.Sprintf("set_field:%s->ip_dst", provIP)
+		if ofctlRawFlowMatch(flowList, matchStr) {
+			log.Infof("DNAT to %s found", provIP)
+		} else {
+			t.Errorf("DNAT flows to %s NOT found %s", provIP, flowList)
+		}
+
+		matchStr = fmt.Sprintf("tcp,nw_src=%s", provIP)
+		if ofctlRawFlowMatch(flowList, matchStr) {
+			log.Infof("SNAT for %s found", provIP)
+		} else {
+			t.Errorf("SNAT flows for %s NOT found %s", provIP, flowList)
+		}
 	}
 
-	matchStr = "tcp,nw_src=20.1.1.23"
-	if ofctlRawFlowMatch(flowList, matchStr) {
-		log.Infof("SNAT for 20.1.23 found")
-	} else {
-		t.Errorf("SNAT flows for 20.1.1.23 found %s", flowList)
-	}
-
-	matchStr = "tcp,nw_src=20.1.1.24"
-	if ofctlRawFlowMatch(flowList, matchStr) {
-		log.Infof("SNAT for 20.1.24 found")
-	} else {
-		t.Errorf("SNAT flows for 20.1.1.24 found %s", flowList)
+	for _, provMac := range provMacs {
+		matchStr := fmt.Sprintf("set_field:%s->eth_dst", provMac)
+		if ofctlRawFlowMatch(flowList, matchStr) {
+			log.Infof("MAC rewrite to %s found", provMac)
+		} else {
+			t.Errorf("MAC rewrite flows to %s NOT found %s", provMac, flowList)
+		}
 	}
 }
 
@@ -267,8 +319,8 @@ func TestSvcProxyInterface(t *testing.T) {
 	ofnetAgent.AddNetwork(1, 1, "", "default")
 
 	// add two endpoints
-	addEP(ofnetAgent, 12, "10.2.2.2", t)
-	addEP(ofnetAgent, 13, "10.2.2.3", t)
+	addEP(ofnetAgent, testEP1port, testEP1ip, t)
+	addEP(ofnetAgent, testEP2port, testEP2ip, t)
 
 	// Create a service spec
 	svcPorts := make([]PortSpec, 3)
@@ -295,6 +347,7 @@ func TestSvcProxyInterface(t *testing.T) {
 	ofnetAgent.AddSvcSpec("LipService", &svc)
 
 	// Add providers
+	spMacs := make([]string, 0, 2)
 	sps := make([]string, 1, 2)
 	sps[0] = "20.1.1.22"
 	ofnetAgent.SvcProviderUpdate("LipService", sps)
@@ -306,37 +359,35 @@ func TestSvcProxyInterface(t *testing.T) {
 	checkFlows(t, brName, "Verify udp watch flows", wFlow2, SRV_PROXY_DNAT_TBL_ID)
 
 	// inject a pkt from the EP to the service
-	pkt1 := getIPPkt("10.2.2.2", "10.254.0.10")
+	pkt1 := getIPPkt(testEP1ip, "10.254.0.10", testEP1port)
 	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt1)
-	pkt2 := getIPPkt("10.2.2.3", "10.254.0.10")
+	pkt2 := getIPPkt(testEP2ip, "10.254.0.10", testEP2port)
 	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt2)
 
 	// At this point, we should have NAT flows set up.
-	dNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=10.2.2.3,nw_dst=10.254.0.10,tp_dst=5600 actions=set_field:9600->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	dNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=10.2.2.2,nw_dst=10.254.0.10,tp_dst=5600 actions=set_field:9600->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	dNFlow3 := fmt.Sprintf("priority=100,tcp,nw_src=10.2.2.3,nw_dst=10.254.0.10,tp_dst=5602 actions=set_field:9602->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	dNFlow4 := fmt.Sprintf("priority=100,tcp,nw_src=10.2.2.2,nw_dst=10.254.0.10,tp_dst=5602 actions=set_field:9602->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	checkFlows(t, brName, "TCP dNAT flow for 10.2.2.3", dNFlow1, SRV_PROXY_DNAT_TBL_ID)
-	checkFlows(t, brName, "TCP dNAT flow for 10.2.2.2", dNFlow2, SRV_PROXY_DNAT_TBL_ID)
-	checkFlows(t, brName, "TCP dNAT flow for 10.2.2.3", dNFlow3, SRV_PROXY_DNAT_TBL_ID)
-	checkFlows(t, brName, "TCP dNAT flow for 10.2.2.2", dNFlow4, SRV_PROXY_DNAT_TBL_ID)
-	dNFlow5 := fmt.Sprintf("priority=100,udp,nw_src=10.2.2.3,nw_dst=10.254.0.10,tp_dst=5601 actions=set_field:9600->udp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	dNFlow6 := fmt.Sprintf("priority=100,udp,nw_src=10.2.2.2,nw_dst=10.254.0.10,tp_dst=5601 actions=set_field:9600->udp_dst,set_field:20.1.1.22->ip_dst,goto_table:3")
-	checkFlows(t, brName, "UDP dNAT flow for 10.2.2.3", dNFlow5, SRV_PROXY_DNAT_TBL_ID)
-	checkFlows(t, brName, "UDP dNAT flow for 10.2.2.2", dNFlow6, SRV_PROXY_DNAT_TBL_ID)
+	clientIPs := make([]string, 2, 2)
+	clientIPs[0] = testEP1ip
+	clientIPs[1] = testEP2ip
 
-	sNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=10.2.2.2,tp_src=9600 actions=set_field:5600->tcp_src,set_field:10.254.0.10->ip_src")
-	sNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=10.2.2.3,tp_src=9600 actions=set_field:5600->tcp_src,set_field:10.254.0.10->ip_src")
-	sNFlow3 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=10.2.2.2,tp_src=9602 actions=set_field:5602->tcp_src,set_field:10.254.0.10->ip_src")
-	sNFlow4 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=10.2.2.3,tp_src=9602 actions=set_field:5602->tcp_src,set_field:10.254.0.10->ip_src")
-	checkFlows(t, brName, "TCP sNAT flow for 10.2.2.2", sNFlow1, SRV_PROXY_SNAT_TBL_ID)
-	checkFlows(t, brName, "TCP sNAT flow for 10.2.2.3", sNFlow2, SRV_PROXY_SNAT_TBL_ID)
-	checkFlows(t, brName, "TCP sNAT flow for 10.2.2.2", sNFlow3, SRV_PROXY_SNAT_TBL_ID)
-	checkFlows(t, brName, "TCP sNAT flow for 10.2.2.3", sNFlow4, SRV_PROXY_SNAT_TBL_ID)
-	sNFlow5 := fmt.Sprintf("priority=100,udp,nw_src=20.1.1.22,nw_dst=10.2.2.2,tp_src=9600 actions=set_field:5601->udp_src,set_field:10.254.0.10->ip_src")
-	sNFlow6 := fmt.Sprintf("priority=100,udp,nw_src=20.1.1.22,nw_dst=10.2.2.3,tp_src=9600 actions=set_field:5601->udp_src,set_field:10.254.0.10->ip_src")
-	checkFlows(t, brName, "UDP sNAT flow for 10.2.2.2", sNFlow5, SRV_PROXY_SNAT_TBL_ID)
-	checkFlows(t, brName, "UDP sNAT flow for 10.2.2.3", sNFlow6, SRV_PROXY_SNAT_TBL_ID)
+	// verify DNAT flows
+	for _, cIP := range clientIPs {
+		dNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5600 actions=set_field:9600->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		checkFlows(t, brName, "TCP dNAT flow for "+cIP, dNFlow1, SRV_PROXY_DNAT_TBL_ID)
+		dNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5602 actions=set_field:9602->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		checkFlows(t, brName, "TCP dNAT flow for "+cIP, dNFlow2, SRV_PROXY_DNAT_TBL_ID)
+		dNFlow3 := fmt.Sprintf("priority=100,udp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5601 actions=set_field:9600->udp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		checkFlows(t, brName, "UDP dNAT flow for "+cIP, dNFlow3, SRV_PROXY_DNAT_TBL_ID)
+	}
+
+	// verify SNAT flows
+	for _, cIP := range clientIPs {
+		sNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=%s,tp_src=9600 actions=set_field:5600->tcp_src,set_field:10.254.0.10->ip_src", cIP)
+		checkFlows(t, brName, "TCP sNAT flow for "+cIP, sNFlow1, SRV_PROXY_SNAT_TBL_ID)
+		sNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=20.1.1.22,nw_dst=%s,tp_src=9602 actions=set_field:5602->tcp_src,set_field:10.254.0.10->ip_src", cIP)
+		checkFlows(t, brName, "TCP sNAT flow for "+cIP, sNFlow2, SRV_PROXY_SNAT_TBL_ID)
+		sNFlow3 := fmt.Sprintf("priority=100,udp,nw_src=20.1.1.22,nw_dst=%s,tp_src=9600 actions=set_field:5601->udp_src,set_field:10.254.0.10->ip_src", cIP)
+		checkFlows(t, brName, "UDP sNAT flow for "+cIP, sNFlow3, SRV_PROXY_SNAT_TBL_ID)
+	}
 
 	// Issue a provider update with two different providers
 	sps[0] = "20.1.1.23"
@@ -344,51 +395,107 @@ func TestSvcProxyInterface(t *testing.T) {
 	ofnetAgent.SvcProviderUpdate("LipService", sps)
 
 	// now, the NAT flows should have been removed.
-	verifyNATRemoved(t, brName)
+	verifyNATRemoved(t, brName, "20.1.1.22")
+	verifyWatchPresent(t, brName)
 
 	// inject packets again
 	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt2)
 	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt1)
 
 	// flows should be setup in load balanced manner.
-	verifyLB(t, brName)
+	verifyLB(t, brName, sps, spMacs)
 
 	// Remove one endpoint
-	err = ofnetAgent.RemoveLocalEndpoint(12)
+	err = ofnetAgent.RemoveLocalEndpoint(testEP1port)
 	if err != nil {
 		t.Errorf("Error deleting endpoint: Err: %v", err)
 		return
 	}
 	// flows of that ep should be gone
-	verifyEPDel(t, brName, "10.2.2.2")
+	verifyEPDel(t, brName, testEP1ip)
 
 	// add another ep and inject a pkt.
-	addEP(ofnetAgent, 14, "10.2.2.4", t)
-	pkt3 := getIPPkt("10.2.2.4", "10.254.0.10")
+	addEP(ofnetAgent, testEP4port, testEP4ip, t)
+	pkt3 := getIPPkt(testEP4ip, "10.254.0.10", testEP4port)
 	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt3)
 
 	// flows should be setup in load balanced manner.
-	verifyLB(t, brName)
+	verifyLB(t, brName, sps, spMacs)
 
-	svcPorts[2] = PortSpec{
+	newSvcPorts := make([]PortSpec, 3)
+	newSvcPorts[0] = PortSpec{
+		Protocol: "TCP",
+		SvcPort:  5600,
+		ProvPort: 9600,
+	}
+	newSvcPorts[1] = PortSpec{
+		Protocol: "UDP",
+		SvcPort:  5601,
+		ProvPort: 9600,
+	}
+	newSvcPorts[2] = PortSpec{
 		Protocol: "TCP",
 		SvcPort:  7777,
 		ProvPort: 9602,
 	}
 	updatedSvc := ServiceSpec{
 		IpAddress: "10.254.0.10",
-		Ports:     svcPorts,
+		Ports:     newSvcPorts,
 	}
 	ofnetAgent.AddSvcSpec("LipService", &updatedSvc)
 
-	// Verify watch flows
-	verifyNATRemoved(t, brName)
+	// Verify NAT flows were removed
+	verifyNATRemoved(t, brName, "20.1.1.23")
+	verifyNATRemoved(t, brName, "20.1.1.24")
+	verifyWatchPresent(t, brName)
+
+	// Add two endpoints as providers in the same subnet.
+	addRemoteEP(ofnetAgent, 23, 1, "10.2.2.23", t)
+	addRemoteEP(ofnetAgent, 24, 1, "10.2.2.24", t)
+
+	// Issue a provider update with the providers in the same subnet
+	// and verify mac rewrite
+	sps[0] = "10.2.2.23"
+	sps[1] = "10.2.2.24"
+	ofnetAgent.SvcProviderUpdate("LipService", sps)
+	// verify watch flows
+	verifyWatchPresent(t, brName)
+
+	// inject packets again
+	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt3)
+	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt2)
+
+	spMacs = append(spMacs, "00:01:02:03:04:23")
+	spMacs = append(spMacs, "00:01:02:03:04:24")
+	verifyLB(t, brName, sps, spMacs)
+
+	// verify no mac-rewrite when the prov is in a different subnet
+	ofnetAgent.AddNetwork(2, 2, "", "default")
+	addRemoteEP(ofnetAgent, 25, 2, "10.2.3.25", t)
+	addRemoteEP(ofnetAgent, 26, 2, "10.2.3.26", t)
+	sps[0] = "10.2.3.25"
+	sps[1] = "10.2.3.26"
+	ofnetAgent.SvcProviderUpdate("LipService", sps)
+	// previous NAT flows should be removed
+	verifyNATRemoved(t, brName, "10.2.2.23")
+	verifyNATRemoved(t, brName, "10.2.2.24")
+	verifyWatchPresent(t, brName)
+	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt3)
+	ofnetAgent.PacketRcvd(ofnetAgent.ofSwitch, pkt2)
+	// new NAT flows should be present
+	verifyLB(t, brName, sps, []string{})
+	spMacs[0] = "00:01:02:03:04:25"
+	spMacs[1] = "00:01:02:03:04:26"
+	verifyNoMacRewrite(t, brName, spMacs)
 
 	// Delete the service
 	ofnetAgent.DelSvcSpec("LipService", &updatedSvc)
 
 	// Make sure flows are gone
 	verifyWatchRemoved(t, brName)
+	// Verify NAT flows were removed
+	verifyNATRemoved(t, brName, "10.2.3.25")
+	verifyNATRemoved(t, brName, "10.2.3.26")
 
 	// Delete the bridge
 	ovsDriver.DeleteBridge(brName)
