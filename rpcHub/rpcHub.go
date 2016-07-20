@@ -48,6 +48,7 @@ func NewRpcServer(portNo uint16) (*rpc.Server, net.Listener) {
 
 	// Listens on a port
 	l, e := net.Listen("tcp", fmt.Sprintf(":%d", portNo))
+	listener := ListenWrapper(l)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
@@ -57,7 +58,7 @@ func NewRpcServer(portNo uint16) (*rpc.Server, net.Listener) {
 	// run in background
 	go func() {
 		for {
-			conn, err := l.Accept()
+			conn, err := listener.Accept()
 			if err != nil {
 				// if listener closed, just exit the groutine
 				if strings.Contains(err.Error(), "use of closed network connection") {
@@ -72,7 +73,7 @@ func NewRpcServer(portNo uint16) (*rpc.Server, net.Listener) {
 		}
 	}()
 
-	return server, l
+	return server, listener
 }
 
 // Create a new client
@@ -134,6 +135,12 @@ func Client(servAddr string, portNo uint16) *RpcClient {
 	return &rpcClient
 }
 
+func DisconnectClient(portNo uint16, servAddr string) {
+
+	clientKey := fmt.Sprintf("%s:%d", servAddr, portNo)
+	clientDb[clientKey] = nil
+}
+
 // Make an rpc call
 func (self *RpcClient) Call(serviceMethod string, args interface{}, reply interface{}) error {
 	// Check if connectin failed
@@ -161,4 +168,55 @@ func (self *RpcClient) Call(serviceMethod string, args interface{}, reply interf
 	}
 
 	return err
+}
+
+// ListenWrapper is a wrapper over net.Listener
+func ListenWrapper(l net.Listener) net.Listener {
+	return &contivListener{
+		Listener: l,
+		cond:     sync.NewCond(&sync.Mutex{})}
+}
+
+type contivListener struct {
+	net.Listener
+	cond   *sync.Cond
+	refCnt int
+}
+
+func (s *contivListener) incrementRef() {
+	s.cond.L.Lock()
+	s.refCnt++
+	s.cond.L.Unlock()
+}
+
+func (s *contivListener) decrementRef() {
+	s.cond.L.Lock()
+	s.refCnt--
+	newRefs := s.refCnt
+	s.cond.L.Unlock()
+	if newRefs == 0 {
+		s.cond.Broadcast()
+	}
+}
+
+// Accept is a wrapper over regular Accept call
+// which also maintains the refCnt
+func (s *contivListener) Accept() (net.Conn, error) {
+	s.incrementRef()
+	defer s.decrementRef()
+	return s.Listener.Accept()
+}
+
+// Close closes the contivListener.
+func (s *contivListener) Close() error {
+	if err := s.Listener.Close(); err != nil {
+		return err
+	}
+
+	s.cond.L.Lock()
+	for s.refCnt > 0 {
+		s.cond.Wait()
+	}
+	s.cond.L.Unlock()
+	return nil
 }

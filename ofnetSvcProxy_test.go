@@ -497,6 +497,4 @@ func TestSvcProxyInterface(t *testing.T) {
 	verifyNATRemoved(t, brName, "10.2.3.25")
 	verifyNATRemoved(t, brName, "10.2.3.26")
 
-	// Delete the bridge
-	ovsDriver.DeleteBridge(brName)
 }
