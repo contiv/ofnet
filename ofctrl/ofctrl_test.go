@@ -97,14 +97,14 @@ func ofctlFlowDump(brName string) ([]string, error) {
 		}
 	}
 
-	log.Debugf("flowList: %+v", flowList)
+	log.Infof("flowList: %+v", flowList)
 
 	return flowList, nil
 }
 
 // Find a flow in flow list and match its action
 func ofctlFlowMatch(flowList []string, tableId int, matchStr, actStr string) bool {
-	mtStr := fmt.Sprintf("table=%d, %s", tableId, matchStr)
+	mtStr := fmt.Sprintf("table=%d, %s ", tableId, matchStr)
 	aStr := fmt.Sprintf("actions=%s", actStr)
 	for _, flowEntry := range flowList {
 		log.Debugf("Looking for %s %s in %s", mtStr, aStr, flowEntry)
@@ -114,6 +114,18 @@ func ofctlFlowMatch(flowList []string, tableId int, matchStr, actStr string) boo
 	}
 
 	return false
+}
+
+// ofctlDumpFlowMatch dumps flows and finds a match
+func ofctlDumpFlowMatch(brName string, tableId int, matchStr, actStr string) bool {
+	// dump flows
+	flowList, err := ofctlFlowDump(brName)
+	if err != nil {
+		log.Errorf("Error dumping flows: Err %v", err)
+		return false
+	}
+
+	return ofctlFlowMatch(flowList, tableId, matchStr, actStr)
 }
 
 // Test if OVS switch connects successfully
@@ -157,6 +169,13 @@ func TestMain(m *testing.M) {
 
 	// run the test
 	exitCode := m.Run()
+
+	// delete the bridge
+	err = ovsDriver.DeleteBridge("ovsbr11")
+	if err != nil {
+		log.Fatalf("Error deleting the bridge. Err: %v", err)
+	}
+
 	os.Exit(exitCode)
 }
 
@@ -347,11 +366,317 @@ func TestCreateDeleteFlow(t *testing.T) {
 	}
 }
 
-// Delete the bridge instance.
-// This needs to be last test
-func TestDeleteBridge(t *testing.T) {
-	err := ovsDriver.DeleteBridge("ovsbr11")
+// TestSetUnsetDscp verifies dscp set/unset action
+func TestSetUnsetDscp(t *testing.T) {
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:  100,
+		InputPort: 1,
+		Ethertype: 0x0800,
+		IpDscp:    46,
+	})
 	if err != nil {
-		t.Errorf("Error deleting the bridge. Err: %v", err)
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set vlan and dscp
+	inPortFlow.SetVlan(1)
+	inPortFlow.SetDscp(23)
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify dscp action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,ip,in_port=1,nw_tos=184",
+		"set_field:23->ip_dscp,push_vlan:0x8100,set_field:4097->vlan_vid,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// unset dscp
+	inPortFlow.UnsetDscp()
+
+	// verify dscp action is gone
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,ip,in_port=1,nw_tos=184",
+		"push_vlan:0x8100,set_field:4097->vlan_vid,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,in_port=1",
+		"push_vlan:0x8100,set_field:4097->vlan_vid,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchSetMetadata verifies metadata match & set metedata
+func TestMatchSetMetadata(t *testing.T) {
+	metadata := uint64(0x1100)
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:     100,
+		InputPort:    1,
+		Metadata:     &metadata,
+		MetadataMask: &metadata,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set Metadata
+	inPortFlow.SetMetadata(uint64(0x8800), uint64(0x8800))
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,metadata=0x1100/0x1100,in_port=1",
+		"write_metadata:0x8800/0x8800,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,metadata=0x1100/0x1100,in_port=1",
+		"write_metadata:0x8800/0x8800,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchSetTunnelId verifies tunnelId match & set
+func TestMatchSetTunnelId(t *testing.T) {
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:  100,
+		InputPort: 1,
+		TunnelId:  10,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set tunnelId
+	inPortFlow.SetTunnelId(20)
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tun_id=0xa,in_port=1",
+		"set_field:0x14->tun_id,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tun_id=0xa,in_port=1",
+		"set_field:0x14->tun_id,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchSetIpFields verifies match & set for ip fields
+func TestMatchSetIpFields(t *testing.T) {
+	ipSa := net.ParseIP("10.1.1.1")
+	ipDa := net.ParseIP("10.2.1.1")
+	ipAddrMask := net.ParseIP("255.255.255.0")
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:  100,
+		InputPort: 1,
+		Ethertype: 0x0800,
+		IpSa:      &ipSa,
+		IpSaMask:  &ipAddrMask,
+		IpDa:      &ipDa,
+		IpDaMask:  &ipAddrMask,
+		IpProto:   IP_PROTO_TCP,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set ip src/dst
+	inPortFlow.SetIPField(net.ParseIP("20.1.1.1"), "Src")
+	inPortFlow.SetIPField(net.ParseIP("20.2.1.1"), "Dst")
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp,in_port=1,nw_src=10.1.1.0/24,nw_dst=10.2.1.0/24",
+		"set_field:20.2.1.1->ip_dst,set_field:20.1.1.1->ip_src,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp,in_port=1,nw_src=10.1.1.0/24,nw_dst=10.2.1.0/24",
+		"set_field:20.2.1.1->ip_dst,set_field:20.1.1.1->ip_src,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchIpv6Fields verifies match ipv6 fields
+func TestMatchIpv6Fields(t *testing.T) {
+	ipv6Sa, ipv6Net, _ := net.ParseCIDR("2016:0616::/100")
+	ipv6Da, _, _ := net.ParseCIDR("2016:0617::/100")
+	ipv6Mask := net.IP(ipv6Net.Mask)
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:   100,
+		InputPort:  1,
+		Ethertype:  0x86DD,
+		Ipv6Sa:     &ipv6Sa,
+		Ipv6SaMask: &ipv6Mask,
+		Ipv6Da:     &ipv6Da,
+		Ipv6DaMask: &ipv6Mask,
+		IpProto:    IP_PROTO_TCP,
+		IpDscp:     23,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set Metadata
+	inPortFlow.SetDscp(46)
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp6,in_port=1,ipv6_src=2016:616::/100,ipv6_dst=2016:617::/100,nw_tos=92",
+		"set_field:46->ip_dscp,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp6,in_port=1,ipv6_src=2016:616::/100,ipv6_dst=2016:617::/100,nw_tos=92",
+		"set_field:46->ip_dscp,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchSetTcpFields verifies match & set for tcp fields
+func TestMatchSetTcpFields(t *testing.T) {
+	tcpFlag := uint16(0x12)
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:     100,
+		InputPort:    1,
+		Ethertype:    0x0800,
+		IpProto:      IP_PROTO_TCP,
+		TcpSrcPort:   8000,
+		TcpDstPort:   9000,
+		TcpFlags:     &tcpFlag,
+		TcpFlagsMask: &tcpFlag,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set TCP src/dst
+	inPortFlow.SetL4Field(4000, "TCPSrc")
+	inPortFlow.SetL4Field(5000, "TCPDst")
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp,in_port=1,tp_src=8000,tp_dst=9000,tcp_flags=+syn+ack",
+		"set_field:5000->tcp_dst,set_field:4000->tcp_src,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,tcp,in_port=1,tp_src=8000,tp_dst=9000,tcp_flags=+syn+ack",
+		"set_field:5000->tcp_dst,set_field:4000->tcp_src,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
+	}
+}
+
+// TestMatchSetUdpFields verifies match & set for udp fields
+func TestMatchSetUdpFields(t *testing.T) {
+	inPortFlow, err := ofActor.inputTable.NewFlow(FlowMatch{
+		Priority:   100,
+		InputPort:  1,
+		Ethertype:  0x0800,
+		IpProto:    IP_PROTO_UDP,
+		UdpSrcPort: 8000,
+		UdpDstPort: 9000,
+	})
+	if err != nil {
+		t.Errorf("Error creating inport flow. Err: %v", err)
+	}
+
+	// Set TCP src/dst
+	inPortFlow.SetL4Field(4000, "UDPSrc")
+	inPortFlow.SetL4Field(5000, "UDPDst")
+
+	// install it
+	err = inPortFlow.Next(ofActor.nextTable)
+	if err != nil {
+		t.Errorf("Error installing inport flow. Err: %v", err)
+	}
+
+	// verify metadata action exists
+	if !ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,udp,in_port=1,tp_src=8000,tp_dst=9000",
+		"set_field:5000->udp_dst,set_field:4000->udp_src,goto_table:1") {
+		t.Errorf("in port flow not found in OVS.")
+	}
+
+	// delete the flow
+	err = inPortFlow.Delete()
+	if err != nil {
+		t.Errorf("Error deleting the inPort flow. Err: %v", err)
+	}
+
+	// Make sure they are really gone
+	if ofctlDumpFlowMatch("ovsbr11", 0, "priority=100,udp,in_port=1,tp_src=8000,tp_dst=9000",
+		"set_field:5000->udp_dst,set_field:4000->udp_src,goto_table:1") {
+		t.Errorf("in port flow still found in OVS after deleting it.")
 	}
 }
