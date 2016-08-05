@@ -264,10 +264,6 @@ func (self *Flow) installFlowActions(flowMod *openflow13.FlowMod,
 	var actInstr openflow13.Instruction
 	var addActn bool = false
 
-	// read lock the flow
-	self.lock.RLock()
-	defer self.lock.RUnlock()
-
 	// Create a apply_action instruction to be used if its not already created
 	switch instr.(type) {
 	case *openflow13.InstrActions:
@@ -496,9 +492,7 @@ func (self *Flow) install() error {
 	self.Table.Switch.Send(flowMod)
 
 	// Mark it as installed
-	self.lock.Lock()
 	self.isInstalled = true
-	self.lock.Unlock()
 
 	return nil
 }
@@ -506,6 +500,9 @@ func (self *Flow) install() error {
 // Set Next element in the Fgraph. This determines what actions will be
 // part of the flow's instruction set
 func (self *Flow) Next(elem FgraphElem) error {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
 	// Set the next element in the graph
 	self.NextElem = elem
 
@@ -519,10 +516,11 @@ func (self *Flow) SetVlan(vlanId uint16) error {
 	action.actionType = "setVlan"
 	action.vlanId = vlanId
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -537,10 +535,11 @@ func (self *Flow) PopVlan() error {
 	action := new(FlowAction)
 	action.actionType = "popVlan"
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -556,10 +555,11 @@ func (self *Flow) SetMacDa(macDa net.HardwareAddr) error {
 	action.actionType = "setMacDa"
 	action.macAddr = macDa
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -575,10 +575,11 @@ func (self *Flow) SetMacSa(macSa net.HardwareAddr) error {
 	action.actionType = "setMacSa"
 	action.macAddr = macSa
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -600,10 +601,11 @@ func (self *Flow) SetIPField(ip net.IP, field string) error {
 		return errors.New("field not supported")
 	}
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -635,10 +637,11 @@ func (self *Flow) SetL4Field(port uint16, field string) error {
 		return errors.New("field not supported")
 	}
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -655,10 +658,11 @@ func (self *Flow) SetMetadata(metadata, metadataMask uint64) error {
 	action.metadata = metadata
 	action.metadataMask = metadataMask
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -674,10 +678,11 @@ func (self *Flow) SetTunnelId(tunnelId uint64) error {
 	action.actionType = "setTunnelId"
 	action.tunnelId = tunnelId
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -693,10 +698,11 @@ func (self *Flow) SetDscp(dscp uint8) error {
 	action.actionType = "setDscp"
 	action.dscp = dscp
 
-	// Add to the action db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Add to the action db
 	self.flowActions = append(self.flowActions, action)
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -708,14 +714,15 @@ func (self *Flow) SetDscp(dscp uint8) error {
 
 // unset dscp field
 func (self *Flow) UnsetDscp() error {
-	// Delete to the action from db
 	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	// Delete to the action from db
 	for idx, act := range self.flowActions {
 		if act.actionType == "setDscp" {
 			self.flowActions = append(self.flowActions[:idx], self.flowActions[idx+1:]...)
 		}
 	}
-	self.lock.Unlock()
 
 	// If the flow entry was already installed, re-install it
 	if self.isInstalled {
@@ -727,6 +734,9 @@ func (self *Flow) UnsetDscp() error {
 
 // Delete the flow
 func (self *Flow) Delete() error {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
 	// Delete from ofswitch
 	if self.isInstalled {
 		// Create a flowmode entry
