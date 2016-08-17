@@ -723,7 +723,7 @@ func (vx *Vxlan) SvcProviderUpdate(svcName string, providers []string) {
 }
 
 // GetEndpointStats fetches ep stats
-func (vx *Vxlan) GetEndpointStats() ([]*OfnetEndpointStats, error) {
+func (vx *Vxlan) GetEndpointStats() (map[string]*OfnetEndpointStats, error) {
 	return nil, nil
 }
 

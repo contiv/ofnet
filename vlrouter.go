@@ -944,7 +944,7 @@ func (self *Vlrouter) SvcProviderUpdate(svcName string, providers []string) {
 }
 
 // GetEndpointStats fetches ep stats
-func (self *Vlrouter) GetEndpointStats() ([]*OfnetEndpointStats, error) {
+func (self *Vlrouter) GetEndpointStats() (map[string]*OfnetEndpointStats, error) {
 	return nil, nil
 }
 

@@ -821,7 +821,7 @@ func (vr *Vrouter) MultipartReply(sw *ofctrl.OFSwitch, reply *openflow13.Multipa
 }
 
 // GetEndpointStats fetches ep stats
-func (vr *Vrouter) GetEndpointStats() ([]*OfnetEndpointStats, error) {
+func (vr *Vrouter) GetEndpointStats() (map[string]*OfnetEndpointStats, error) {
 	return vr.svcProxy.GetEndpointStats()
 }
 
