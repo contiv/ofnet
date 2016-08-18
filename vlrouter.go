@@ -970,14 +970,24 @@ func (self *Vlrouter) SvcProviderUpdate(svcName string, providers []string) {
 
 // GetEndpointStats fetches ep stats
 func (self *Vlrouter) GetEndpointStats() (map[string]*OfnetEndpointStats, error) {
-	return nil, nil
+	return self.svcProxy.GetEndpointStats()
 }
 
 // MultipartReply handles stats reply
 func (self *Vlrouter) MultipartReply(sw *ofctrl.OFSwitch, reply *openflow13.MultipartReply) {
+	if reply.Type == openflow13.MultipartType_Flow {
+		self.svcProxy.FlowStats(reply)
+	}
 }
 
 // InspectState returns current state
 func (self *Vlrouter) InspectState() (interface{}, error) {
-	return nil, nil
+	vlrExport := struct {
+		PolicyAgent *PolicyAgent // Policy agent
+		SvcProxy    interface{}  // Service proxy
+	}{
+		self.policyAgent,
+		self.svcProxy.InspectState(),
+	}
+	return vlrExport, nil
 }
