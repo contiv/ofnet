@@ -139,10 +139,10 @@ func TestPolicyAddDelete(t *testing.T) {
 		return
 	}
 	// verify src group flow
-	srcGrpFlowMatch := fmt.Sprintf("priority=100,in_port=12 actions=write_metadata:0x100640000/0xff7fff0000")
+	srcGrpFlowMatch := fmt.Sprintf("priority=10,in_port=12 actions=write_metadata:0x100640000/0xff7fff0000")
 	if !ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
-		t.Errorf("Could not find the flow %s on ovs %s", srcGrpFlowMatch, brName)
-		return
+		fmt.Printf("Flows:\n%+v", flowList)
+		t.Fatalf("Could not find the flow %s on ovs %s", srcGrpFlowMatch, brName)
 	}
 
 	log.Infof("Found src group %s on ovs %s", srcGrpFlowMatch, brName)
@@ -150,8 +150,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	// verify dst group flow
 	dstGrpFlowMatch := fmt.Sprintf("priority=100,ip,metadata=0x100000000/0xff00000000,nw_dst=10.2.2.2 actions=write_metadata:0xc8/0xfffe")
 	if !ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
-		t.Errorf("Could not find the flow %s on ovs %s", dstGrpFlowMatch, brName)
-		return
+		t.Fatalf("Could not find the flow %s on ovs %s", dstGrpFlowMatch, brName)
 	}
 
 	log.Infof("Found dst group %s on ovs %s", dstGrpFlowMatch, brName)
@@ -159,8 +158,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	// verify tcp rule flow entry exists
 	tcpFlowMatch := fmt.Sprintf("priority=110,tcp,metadata=0x640190/0x7ffffffe,nw_src=10.10.10.0/24,nw_dst=10.1.1.0/24,tp_src=200,tp_dst=100")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, tcpFlowMatch) {
-		t.Errorf("Could not find the flow %s on ovs %s", tcpFlowMatch, brName)
-		return
+		t.Fatalf("Could not find the flow %s on ovs %s", tcpFlowMatch, brName)
 	}
 
 	log.Infof("Found tcp rule %s on ovs %s", tcpFlowMatch, brName)
@@ -168,8 +166,7 @@ func TestPolicyAddDelete(t *testing.T) {
 	// verify udp rule flow
 	udpFlowMatch := fmt.Sprintf("priority=110,udp,metadata=0x12c0320/0x7ffffffe,nw_src=20.20.20.0/24,nw_dst=20.2.2.0/24,tp_src=400,tp_dst=300")
 	if !ofctlFlowMatch(flowList, POLICY_TBL_ID, udpFlowMatch) {
-		t.Errorf("Could not find the flow %s on ovs %s", udpFlowMatch, brName)
-		return
+		t.Fatalf("Could not find the flow %s on ovs %s", udpFlowMatch, brName)
 	}
 
 	log.Infof("Found udp rule %s on ovs %s", udpFlowMatch, brName)
@@ -177,18 +174,15 @@ func TestPolicyAddDelete(t *testing.T) {
 	// Delete policies
 	err = ofnetMaster.DelRule(tcpRule)
 	if err != nil {
-		t.Errorf("Error deleting tcpRule {%+v}. Err: %v", tcpRule, err)
-		return
+		t.Fatalf("Error deleting tcpRule {%+v}. Err: %v", tcpRule, err)
 	}
 	err = ofnetMaster.DelRule(udpRule)
 	if err != nil {
-		t.Errorf("Error deleting udpRule {%+v}. Err: %v", udpRule, err)
-		return
+		t.Fatalf("Error deleting udpRule {%+v}. Err: %v", udpRule, err)
 	}
 	err = ofnetAgent.RemoveLocalEndpoint(endpoint.PortNo)
 	if err != nil {
-		t.Errorf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
-		return
+		t.Fatalf("Error deleting endpoint: %+v. Err: %v", endpoint, err)
 	}
 
 	log.Infof("Deleted all policy entries")
@@ -196,26 +190,21 @@ func TestPolicyAddDelete(t *testing.T) {
 	// Get the flows again
 	flowList, err = ofctlFlowDump(brName)
 	if err != nil {
-		t.Errorf("Error getting flow entries. Err: %v", err)
-		return
+		t.Fatalf("Error getting flow entries. Err: %v", err)
 	}
 
 	// Make sure flows are gone
 	if ofctlFlowMatch(flowList, VLAN_TBL_ID, srcGrpFlowMatch) {
-		t.Errorf("Still found the flow %s on ovs %s", srcGrpFlowMatch, brName)
-		return
+		t.Fatalf("Still found the flow %s on ovs %s", srcGrpFlowMatch, brName)
 	}
 	if ofctlFlowMatch(flowList, DST_GRP_TBL_ID, dstGrpFlowMatch) {
-		t.Errorf("Still found the flow %s on ovs %s", dstGrpFlowMatch, brName)
-		return
+		t.Fatalf("Still found the flow %s on ovs %s", dstGrpFlowMatch, brName)
 	}
 	if ofctlFlowMatch(flowList, POLICY_TBL_ID, tcpFlowMatch) {
-		t.Errorf("Still found the flow %s on ovs %s", tcpFlowMatch, brName)
-		return
+		t.Fatalf("Still found the flow %s on ovs %s", tcpFlowMatch, brName)
 	}
 	if ofctlFlowMatch(flowList, POLICY_TBL_ID, udpFlowMatch) {
-		t.Errorf("Still found the flow %s on ovs %s", udpFlowMatch, brName)
-		return
+		t.Fatalf("Still found the flow %s on ovs %s", udpFlowMatch, brName)
 	}
 
 	log.Infof("Verified all flows are deleted")
