@@ -143,48 +143,48 @@
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/api",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/config",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/packet/bgp",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/packet/bmp",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/packet/mrt",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/packet/rtr",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/server",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/table",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/osrg/gobgp/zebra",
-			"Comment": "v1.10-8-g7bf91ea",
-			"Rev": "7bf91ea437181b85ecc3a1473adc3fbc0da80cbe"
+			"Comment": "v1.11",
+			"Rev": "c58019018fe0bf8282e6cb762300a44f84e77dc7"
 		},
 		{
 			"ImportPath": "github.com/pkg/errors",
