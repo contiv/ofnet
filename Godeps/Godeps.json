@@ -201,19 +201,19 @@
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/common",
-			"Rev": "11954d9e46275d5cd47788dd8bc31420a238e34e"
+			"Rev": "ef74a407cc85370620a5515d627580b20f18a582"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/openflow13",
-			"Rev": "11954d9e46275d5cd47788dd8bc31420a238e34e"
+			"Rev": "ef74a407cc85370620a5515d627580b20f18a582"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/protocol",
-			"Rev": "11954d9e46275d5cd47788dd8bc31420a238e34e"
+			"Rev": "ef74a407cc85370620a5515d627580b20f18a582"
 		},
 		{
 			"ImportPath": "github.com/shaleman/libOpenflow/util",
-			"Rev": "11954d9e46275d5cd47788dd8bc31420a238e34e"
+			"Rev": "ef74a407cc85370620a5515d627580b20f18a582"
 		},
 		{
 			"ImportPath": "github.com/spf13/afero",
