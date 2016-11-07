@@ -1,0 +1,316 @@
+diff --git a/lib/ofp-actions.c b/lib/ofp-actions.c
+index 16f0f7c..c4cfd22 100644
+--- a/lib/ofp-actions.c
++++ b/lib/ofp-actions.c
+@@ -5228,26 +5228,48 @@ encode_CT(const struct ofpact_conntrack *conntrack,
+     struct nx_action_conntrack *nac;
+     const size_t ofs = out->size;
+     size_t len;
+-
++    printf("OFPACT CONNTRACK LENGHT :%d, %d \n",(int)sizeof(*conntrack),(int)sizeof(conntrack->zone_src));
+     nac = put_NXAST_CT(out);
++    printf("encode_CT: type:%d,len:%d,zone-src:%d subtype:%d vendor:%d pad:%d\n",nac->type,nac->len,nac->zone_src,nac->subtype,nac->vendor,sizeof(nac->pad));
+     nac->flags = htons(conntrack->flags);
++    printf("encode_CT: flags:%d \n",conntrack->flags);
+     if (conntrack->zone_src.field) {
+         nac->zone_src = htonl(mf_nxm_header(conntrack->zone_src.field->id));
+         nac->zone_ofs_nbits = nxm_encode_ofs_nbits(conntrack->zone_src.ofs,
+                                                    conntrack->zone_src.n_bits);
++	printf("zone_src.field: %d \n",conntrack->zone_src.field->id);
++	printf("zone_ofs_nbits: %d \n",conntrack->zone_src.ofs);
++	printf("zone_src.n_bits: %d \n",conntrack->zone_src.n_bits);
++	    printf("encode_CT: mf_field,mf_field_id:%d \n",conntrack->zone_src.field->id);
++    printf("encode_CT:name:%s\n",conntrack->zone_src.field->name);
++    printf("encode_CT:extra_name:%s \n",conntrack->zone_src.field->extra_name);
++    printf("encode_CT:n_bytes:%d \n",conntrack->zone_src.field->n_bytes);
++    printf("encode_CT:n_bits:%d \n",conntrack->zone_src.field->n_bits);
++    printf("encode_CT:variable_len:%d \n",conntrack->zone_src.field->variable_len);
++    printf("encode_CT:maskable:%d \n",conntrack->zone_src.field->maskable);
++    printf("encode_CT:string:%d \n",conntrack->zone_src.field->string);
++    printf("encode_CT:prereqs:%d \n",conntrack->zone_src.field->prereqs);
++    printf("encode_CT:writeable:%d \n",conntrack->zone_src.field->writable);
++    printf("encode_CT:uable_protocols:%d \n",conntrack->zone_src.field->usable_protocols_exact);
++    printf("encode_CT:usable_cidr:%d \n",conntrack->zone_src.field->usable_protocols_cidr);
++    printf("encode_CT:usable_bitwise:%d \n",conntrack->zone_src.field->usable_protocols_bitwise); 
++    printf("encode_CT:FLOW_BE32OFS:%d \n",conntrack->zone_src.field->flow_be32ofs);
+     } else {
+         nac->zone_src = htonl(0);
+         nac->zone_imm = htons(conntrack->zone_imm);
++	printf("zone_imm: %d \n",conntrack->zone_imm);
+     }
+     nac->recirc_table = conntrack->recirc_table;
++    printf("encode_CT: recirc_table:%d \n",conntrack->recirc_table);
+     nac->alg = htons(conntrack->alg);
+-
++    printf("alg : %d \n",conntrack->alg);
+     len = ofpacts_put_openflow_actions(conntrack->actions,
+                                        ofpact_ct_get_action_len(conntrack),
+                                        out, ofp_version);
+     len += sizeof(*nac);
+     nac = ofpbuf_at(out, ofs, sizeof(*nac));
+     nac->len = htons(len);
++    printf("encode_CT: len: %d \n",nac->len);
+ }
+ 
+ static char * OVS_WARN_UNUSED_RESULT parse_NAT(char *arg, struct ofpbuf *,
+@@ -5266,7 +5288,7 @@ parse_CT(char *arg, struct ofpbuf *ofpacts,
+     struct ofpact_conntrack *oc;
+     char *error = NULL;
+     char *key, *value;
+-
++    printf("COMING HERE YAYYYYYYYY \n");
+     oc = ofpact_put_CT(ofpacts);
+     oc->flags = 0;
+     oc->recirc_table = NX_CT_RECIRC_NONE;
+@@ -5406,21 +5428,26 @@ encode_NAT(const struct ofpact_nat *nat,
+            enum ofp_version ofp_version OVS_UNUSED,
+            struct ofpbuf *out)
+ {
++    printf("encode_NAT: len of nat is %ld \n",sizeof(*nat));
+     struct nx_action_nat *nan;
+     const size_t ofs = out->size;
+     uint16_t range_present = 0;
+ 
+     nan = put_NXAST_NAT(out);
+     nan->flags = htons(nat->flags);
++    printf("ENCODE_NAT: flags:%d\n",nat->flags);
++    printf("ENCODE_NAT: range_af:%d\n",nat->range_af);
+     if (nat->range_af == AF_INET) {
+         if (nat->range.addr.ipv4.min) {
+             ovs_be32 *min = ofpbuf_put_uninit(out, sizeof *min);
+             *min = nat->range.addr.ipv4.min;
++	    printf("ENCODE_NAT: range min:%d\n",*min);
+             range_present |= NX_NAT_RANGE_IPV4_MIN;
+         }
+         if (nat->range.addr.ipv4.max) {
+             ovs_be32 *max = ofpbuf_put_uninit(out, sizeof *max);
+             *max = nat->range.addr.ipv4.max;
++	    printf("ENCODE_NAT: range max:%d\n",*max);
+             range_present |= NX_NAT_RANGE_IPV4_MAX;
+         }
+     } else if (nat->range_af == AF_INET6) {
+@@ -5447,9 +5474,11 @@ encode_NAT(const struct ofpact_nat *nat,
+             range_present |= NX_NAT_RANGE_PROTO_MAX;
+         }
+     }
++    printf("pad---- %d",(int)ofs);
+     pad_ofpat(out, ofs);
+     nan = ofpbuf_at(out, ofs, sizeof *nan);
+     nan->range_present = htons(range_present);
++    printf("ENCODE_NAT: type:%d, len:%d , vendor:%d , subtype: %d ,flag: %d, range_prsent: %d ipv4_max:%d ipv4_min:%d ipv6 max, ipv6 min \n",nan->type,nan->len,nan->vendor,nan->subtype,nan->flags,nan->range_present ,NX_NAT_RANGE_IPV4_MAX,NX_NAT_RANGE_IPV4_MIN,NX_NAT_RANGE_IPV6_MAX,NX_NAT_RANGE_IPV6_MIN);
+ }
+ 
+ static enum ofperr
+@@ -6045,7 +6074,6 @@ ofpacts_decode(const void *actions, size_t actions_len,
+         enum ofp_raw_action_type raw;
+         enum ofperr error;
+         uint64_t arg;
+-
+         error = ofpact_pull_raw(&openflow, ofp_version, &raw, &arg);
+         if (!error) {
+             error = ofpact_decode(action, raw, ofp_version, arg, ofpacts);
+@@ -6070,13 +6098,13 @@ ofpacts_pull_openflow_actions__(struct ofpbuf *openflow,
+     const struct ofp_action_header *actions;
+     size_t orig_size = ofpacts->size;
+     enum ofperr error;
+-
++    VLOG_INFO("ofpacts_pull_openflow_actions__ action len:%d \n",actions_len);
+     if (actions_len % OFP_ACTION_ALIGN != 0) {
+         VLOG_WARN_RL(&rl, "OpenFlow message actions length %u is not a "
+                      "multiple of %d", actions_len, OFP_ACTION_ALIGN);
+         return OFPERR_OFPBRC_BAD_LEN;
+     }
+-
++    VLOG_INFO(" COMING 6106 \n");
+     actions = ofpbuf_try_pull(openflow, actions_len);
+     if (actions == NULL) {
+         VLOG_WARN_RL(&rl, "OpenFlow message actions length %u exceeds "
+@@ -6084,18 +6112,19 @@ ofpacts_pull_openflow_actions__(struct ofpbuf *openflow,
+                      actions_len, openflow->size);
+         return OFPERR_OFPBRC_BAD_LEN;
+     }
+-
++    VLOG_INFO(" COMING 6114 \n");
+     error = ofpacts_decode(actions, actions_len, version, ofpacts);
+     if (error) {
+         ofpacts->size = orig_size;
+         return error;
+     }
+-
++    VLOG_INFO(" COMING 6120 \n");
+     error = ofpacts_verify(ofpacts->data, ofpacts->size, allowed_ovsinsts,
+                            outer_action);
+     if (error) {
+         ofpacts->size = orig_size;
+     }
++   
+     return error;
+ }
+ 
+@@ -8084,15 +8113,19 @@ ofpact_decode_raw(enum ofp_version ofp_version,
+     if (length < sizeof *oah) {
+         return OFPERR_OFPBAC_BAD_LEN;
+     }
+-
++    VLOG_INFO("type:%d,%d \n",oah->type,htons(OFPAT_VENDOR));
+     /* Get base action type. */
+     if (oah->type == htons(OFPAT_VENDOR)) {
+         /* Get vendor. */
++	VLOG_INFO("COMING TO OFPAT_VENDOR \n");
+         hdrs.vendor = ntohl(oah->vendor);
+-        if (hdrs.vendor == NX_VENDOR_ID || hdrs.vendor == ONF_VENDOR_ID) {
++         VLOG_WARN_RL(&rl, "OpenFlow action has known vendor %#"PRIx32,
++                        hdrs.vendor);
++	if (hdrs.vendor == NX_VENDOR_ID || hdrs.vendor == ONF_VENDOR_ID) {
+             /* Get extension subtype. */
+             const struct ext_action_header *nah;
+-
++	    VLOG_WARN_RL(&rl, "OpenFlow action has known vendor %#"PRIx32,
++                         hdrs.vendor);
+             nah = ALIGNED_CAST(const struct ext_action_header *, oah);
+             if (length < sizeof *nah) {
+                 return OFPERR_OFPBAC_BAD_LEN;
+@@ -8104,6 +8137,7 @@ ofpact_decode_raw(enum ofp_version ofp_version,
+             return OFPERR_OFPBAC_BAD_VENDOR;
+         }
+     } else {
++	
+         hdrs.vendor = 0;
+         hdrs.type = ntohs(oah->type);
+     }
+@@ -8149,6 +8183,7 @@ ofpact_pull_raw(struct ofpbuf *buf, enum ofp_version ofp_version,
+                      "length %"PRIu32, action->name, length, buf->size);
+         return OFPERR_OFPBAC_BAD_LEN;
+     }
++    VLOG_INFO("The lenght is %s lenght :%d , minlength:%d maxlength:%d \n",action->name,length,action->min_length,action->max_length);
+     if (length < action->min_length || length > action->max_length) {
+         VLOG_WARN_RL(&rl, "OpenFlow action %s length %u not in valid range "
+                      "[%hu,%hu]", action->name, length,
+@@ -8242,7 +8277,7 @@ static void
+ pad_ofpat(struct ofpbuf *openflow, size_t start_ofs)
+ {
+     struct ofp_action_header *oah;
+-
++ 
+     ofpbuf_put_zeros(openflow, PAD_SIZE(openflow->size - start_ofs,
+                                         OFP_ACTION_ALIGN));
+ 
+diff --git a/lib/ofp-util.c b/lib/ofp-util.c
+index 0445968..2af2359 100644
+--- a/lib/ofp-util.c
++++ b/lib/ofp-util.c
+@@ -2145,10 +2145,14 @@ struct ofpbuf *
+ ofputil_encode_flow_mod(const struct ofputil_flow_mod *fm,
+                         enum ofputil_protocol protocol)
+ {
++    int i;
+     enum ofp_version version = ofputil_protocol_to_ofp_version(protocol);
+     ovs_be16 raw_flags = ofputil_encode_flow_mod_flags(fm->flags, version);
+     struct ofpbuf *msg;
+-
++     printf("table_ID:%d,command:%d,flags:%d,importance:%d \n",fm->table_id,fm->command,fm->flags,fm->importance);
++    for (i=0;i<fm->ofpacts_len;i++){
++        printf("ofpact_type:%d,ofpact_raw:%d,ofpact_len:%d \n",fm->ofpacts[i].type,fm->ofpacts[i].raw,fm->ofpacts[i].len);
++    }
+     switch (protocol) {
+     case OFPUTIL_P_OF11_STD:
+     case OFPUTIL_P_OF12_OXM:
+@@ -8667,7 +8671,7 @@ ofputil_pull_ofp11_buckets(struct ofpbuf *msg, size_t buckets_length,
+ {
+     struct ofp11_bucket *ob;
+     uint32_t bucket_id = 0;
+-
++    VLOG_INFO("ofputil_pull_ofp11_buckets buckets_length:%d \n",buckets_length);
+     ovs_list_init(buckets);
+     while (buckets_length > 0) {
+         struct ofputil_bucket *bucket;
+@@ -8683,7 +8687,7 @@ ofputil_pull_ofp11_buckets(struct ofpbuf *msg, size_t buckets_length,
+                          buckets_length);
+             return OFPERR_OFPGMFC_BAD_BUCKET;
+         }
+-
++	VLOG_INFO("oblen:%d,ob->len:%d \n",ob_len,ob->len);		
+         ob_len = ntohs(ob->len);
+         if (ob_len < sizeof *ob) {
+             VLOG_WARN_RL(&bad_ofmsg_rl, "OpenFlow message bucket length "
+@@ -9162,7 +9166,8 @@ ofputil_encode_ofp15_group_mod(enum ofp_version ofp_version,
+     size_t start_ogm;
+     struct ofputil_bucket *bucket;
+     struct id_pool *bucket_ids = NULL;
+-
++    int i;
++    struct ds s;
+     b = ofpraw_alloc(OFPRAW_OFPT15_GROUP_MOD, ofp_version, 0);
+     start_ogm = b->size;
+     ofpbuf_put_zeros(b, sizeof *ogm);
+@@ -9172,7 +9177,16 @@ ofputil_encode_ofp15_group_mod(enum ofp_version ofp_version,
+ 
+         /* Generate a bucket id if none was supplied */
+         if (bucket->bucket_id > OFPG15_BUCKET_MAX) {
+-            if (!bucket_ids) {
++       	printf("ofputil_encode_ofp15_group_mod: weight:%d,watch_group:%d,watch_port:%d,bucket_id:%d,ofpacts-len:%d \n",bucket->weight,bucket->watch_group,ofp_to_u16(bucket->watch_port),bucket->bucket_id,(unsigned int)bucket->ofpacts_len);
++        
++	ds_init(&s);
++        ds_put_cstr(&s, "actions=");
++        ofpacts_format(bucket->ofpacts, bucket->ofpacts_len, &s);
++	printf("ofputil_encode_ofp15_group_mod ======= %s \n",s.string);
++	for(i=0;i<bucket->ofpacts_len;i++){
++		printf("ofputil_encode_ofp15_group_mod - ofpact_type:%d,ofpact_len:%d \n",bucket->ofpacts[i].type,bucket->ofpacts[i].len);
++	}
++	if (!bucket_ids) {
+                 const struct ofputil_bucket *bkt;
+ 
+                 bucket_ids = id_pool_create(0, OFPG15_BUCKET_MAX + 1);
+@@ -9390,7 +9404,7 @@ ofputil_decode_group_mod(const struct ofp_header *oh,
+                          struct ofputil_group_mod *gm)
+ {
+     ofputil_init_group_properties(&gm->props);
+-
++    VLOG_INFO("COMING HERE TO ofputil_decode_group_mod \n");
+     enum ofp_version ofp_version = oh->version;
+     struct ofpbuf msg = ofpbuf_const_initializer(oh, ntohs(oh->length));
+     ofpraw_pull_assert(&msg);
+diff --git a/ofproto/ofproto.c b/ofproto/ofproto.c
+index de1c469..fd33765 100644
+--- a/ofproto/ofproto.c
++++ b/ofproto/ofproto.c
+@@ -7165,7 +7165,7 @@ handle_group_mod(struct ofconn *ofconn, const struct ofp_header *oh)
+     struct ofproto *ofproto = ofconn_get_ofproto(ofconn);
+     struct ofproto_group_mod ogm;
+     enum ofperr error;
+-
++    VLOG_INFO("handle_group_mod \n");
+     error = reject_slave_controller(ofconn);
+     if (error) {
+         return error;
+@@ -7793,11 +7793,12 @@ handle_openflow__(struct ofconn *ofconn, const struct ofpbuf *msg)
+     const struct ofp_header *oh = msg->data;
+     enum ofptype type;
+     enum ofperr error;
+-
++    VLOG_INFO("###############ofbuf is %s \n",ofpbuf_to_string(msg,msg->size));    
+     error = ofptype_decode(&type, oh);
+     if (error) {
+         return error;
+     }
++    VLOG_INFO("handle_openflow ---- NOT returning error type is %d \n",type);
+     if (oh->version >= OFP13_VERSION && ofpmsg_is_stat_request(oh)
+         && ofpmp_more(oh)) {
+         /* We have no buffer implementation for multipart requests.
+@@ -7997,13 +7998,14 @@ handle_openflow(struct ofconn *ofconn, const struct ofpbuf *ofp_msg)
+     OVS_EXCLUDED(ofproto_mutex)
+ {
+     enum ofperr error = handle_openflow__(ofconn, ofp_msg);
+-
++    VLOG_INFO("COMING HERE BOSS \n");
++          
+     if (error) {
+         ofconn_send_error(ofconn, ofp_msg->data, error);
+     }
+     COVERAGE_INC(ofproto_recv_openflow);
+ }
+-
++
+ static uint64_t
+ pick_datapath_id(const struct ofproto *ofproto)
+ {
