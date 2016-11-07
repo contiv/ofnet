@@ -1,5 +1,3 @@
-package ofnet
-
 /***
 Copyright 2014 Cisco Systems Inc. All rights reserved.
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +10,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+package ofnet
 
 // This file implements the virtual router functionality using Vxlan overlay
 
@@ -361,7 +360,6 @@ func (vl *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	}
 
 	// Find the flow entry
-	//flowId := vl.agent.getEndpointIdByIpVlan(endpoint.IpAddr, endpoint.Vlan)
 	flowId := endpoint.EndpointID
 	ipFlow := vl.flowDb[flowId]
 	if ipFlow == nil {
@@ -378,7 +376,7 @@ func (vl *Vlrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	flowId = endpoint.EndpointID + "vlan"
 	ipFlow = vl.flowDb[flowId]
 	if ipFlow == nil {
-		log.Errorf("Error finding the flow for endpoint: %+v", endpoint)
+		log.Errorf("Error finding the tagged flow for endpoint: %+v", endpoint)
 		return errors.New("Flow not found")
 	}
 
@@ -598,10 +596,8 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	flowId := vl.agent.getEndpointIdByIpVlan(endpoint.IpAddr, endpoint.Vlan)
 
 	//nexthopEp := vl.agent.getEndpointByIpVrf(net.ParseIP(vl.agent.GetNeighbor()), "default")
-	if vl.agent.isExternal(endpoint) { //nexthopEp != nil && nexthopEp.PortNo != 0 && vl.agent.isExternal(endpoint) {
-		//endpoint.MacAddrStr = nexthopEp.MacAddrStr
-		//endpoint.PortNo = nexthopEp.PortNo
-		//endpoint.Vlan = 0
+	if vl.agent.isExternal(endpoint) {
+		endpoint.Vlan = 0
 		priority += 1
 		flowId = flowId + "external"
 	} else {
@@ -610,11 +606,6 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 			endpoint.PortNo = vl.uplinkOfp
 			endpoint.MacAddrStr = endpoint.OriginatorMac
 		}
-		//if nexthopEp == nil {
-		//	log.Infof("nexthop is nili %s \n",vl.myBgpPeer)
-		//}else{
-		//	log.Infof("nexthop port is 0 \n")
-		//}
 		if endpoint.PortNo == 0 {
 			if !vl.agent.isExternalBgp(endpoint) {
 				//for the remote endpoints maintain a cache of
@@ -627,14 +618,12 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 			}
 		}
 	}
-	log.Infof("COMING HERE WITH portno :%d \n", endpoint.PortNo)
 	if vl.agent.isExternalBgp(endpoint) {
-		//vl.myBgpPeer = endpoint.IpAddr.String()
 		endpoint.Vlan = 0
 		if endpoint.PortNo == 0 {
-			log.Infof("COMING HERE WITH portno :%d \n", endpoint.PortNo)
 			return nil
 		}
+		flowId = flowId + "external"
 	}
 
 	vrfid := vl.agent.getvrfId(endpoint.Vrf)
@@ -651,15 +640,6 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		log.Errorf("Error creating output port %d. Err: %v", endpoint.PortNo, err)
 		return err
 	}
-
-	/*if ipFlow, ok := vl.flowDb[flowId]; ok {
-		// Delete the Fgraph entry
-		err := ipFlow.Delete()
-		if err != nil {
-			log.Errorf("Error deleting the endpoint: %+v. Err: %v", endpoint, err)
-		}
-		delete(vl.flowDb, flowId)
-	}*/
 
 	// Install the IP address
 	ipFlow, err := vl.ipTable.NewFlow(ofctrl.FlowMatch{
@@ -699,7 +679,6 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	}
 	// Store it in flow db
 	vl.flowDb[flowId] = ipFlow
-
 	if endpoint.Ipv6Addr != nil && endpoint.Ipv6Addr.String() != "" {
 		err = vl.AddRemoteIpv6Flow(endpoint)
 		if err != nil {
@@ -719,7 +698,10 @@ func (vl *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 		return nil
 	}
 
+	flowId := endpoint.EndpointID
+
 	if vl.agent.isExternalBgp(endpoint) {
+		flowId = flowId + "external"
 		vl.myBgpPeer = ""
 	}
 
@@ -730,8 +712,6 @@ func (vl *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 	//}
 
 	// Find the flow entry
-	//flowId := vl.agent.getEndpointIdByIpVlan(endpoint.IpAddr, endpoint.Vlan)
-	flowId := endpoint.EndpointID
 	if vl.agent.isExternal(endpoint) {
 		//This scenrio occurs when bgp unsets the external endpointtype
 		if _, ok := vl.flowDb[flowId+"external"]; ok {
@@ -739,7 +719,6 @@ func (vl *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 		}
 	}
 
-	log.Infof("Deleting Flow ID : %s", flowId)
 	ipFlow := vl.flowDb[flowId]
 	if ipFlow == nil {
 		log.Errorf("Error finding the flow for endpoint: %+v", endpoint)
@@ -775,7 +754,6 @@ func (vl *Vlrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 func (vl *Vlrouter) AddRemoteIpv6Flow(endpoint *OfnetEndpoint) error {
 	ipv6EpId := vl.agent.getEndpointIdByIpVlan(endpoint.Ipv6Addr, endpoint.Vlan)
 
-	//nexthopEp := vl.agent.getEndpointByIpVrf(net.ParseIP(vl.agent.GetMyBgpPeer()), "default")
 	if vl.agent.isExternal(endpoint) { //nexthopEp != nil && nexthopEp.PortNo != 0 {
 		//	endpoint.MacAddrStr = nexthopEp.MacAddrStr
 		//	endpoint.PortNo = nexthopEp.PortNo
@@ -1020,39 +998,41 @@ func (vl *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 				}
 				srcMac, _ = net.ParseMAC(proxyMac)
 			} else {
+				srcEp := vl.agent.getLocalEndpoint(inPort)
 				if vl.agent.isInternal(endpoint) || vl.agent.isInternalBgp(endpoint) {
-					//srcMac, _ = net.ParseMAC(endpoint.MacAddrStr)
-					if vl.agent.GetRouterInfo() != nil {
-						uplink := vl.agent.GetRouterInfo().UplinkPort
+					if srcEp != nil && vl.agent.isInternal(srcEp) {
+						srcMac = vl.anycastMac
+					} else {
+						if vl.agent.GetRouterInfo() != nil {
+							uplink := vl.agent.GetRouterInfo().UplinkPort
 
-						if uplink != nil && len(uplink.MbrLinks) == 0 {
-							log.Errorf("Error getting interface information. Err: No member links present")
-							return
-						}
-
-						log.Infof("The uplinkg port is %+v \n", uplink)
-						intf, err = net.InterfaceByName(uplink.MbrLinks[0].Name)
-						if err != nil {
-							log.Errorf("Error getting interface information. Err: %+v", err)
-							return
-						}
-					} else if vl.uplinkPortDb.Count() > 0 {
-						for ul := range vl.uplinkPortDb.IterBuffered() {
-							uplink := ul.Val.(*PortInfo)
-							if uplink != nil && len(uplink.MbrLinks) > 0 {
-								intf, err = net.InterfaceByName(uplink.MbrLinks[0].Name)
-							} else {
-								log.Infof("Uplink intf not present. Ignoring Arp")
+							if uplink != nil && len(uplink.MbrLinks) == 0 {
+								log.Errorf("Error getting interface information. Err: No member links present")
 								return
 							}
+
+							intf, err = net.InterfaceByName(uplink.MbrLinks[0].Name)
+							if err != nil {
+								log.Errorf("Error getting interface information. Err: %+v", err)
+								return
+							}
+						} else if vl.uplinkPortDb.Count() > 0 {
+							for ul := range vl.uplinkPortDb.IterBuffered() {
+								uplink := ul.Val.(*PortInfo)
+								if uplink != nil && len(uplink.MbrLinks) > 0 {
+									intf, err = net.InterfaceByName(uplink.MbrLinks[0].Name)
+								} else {
+									log.Infof("Uplink intf not present. Ignoring Arp")
+									return
+								}
+							}
+						} else {
+							log.Infof("Uplink intf not present. Ignoring Arp")
+							return
 						}
-					} else {
-						log.Infof("Uplink intf not present. Ignoring Arp")
-						return
+						srcMac = intf.HardwareAddr
 					}
-					srcMac = intf.HardwareAddr
 				} else if vl.agent.isExternal(endpoint) || vl.agent.isExternalBgp(endpoint) {
-					srcEp := vl.agent.getLocalEndpoint(inPort)
 					if endpoint.PortNo != 0 && srcEp != nil {
 						if vl.agent.isInternal(srcEp) || vl.agent.isInternalBgp(srcEp) {
 							srcMac = vl.anycastMac
@@ -1075,7 +1055,7 @@ func (vl *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 			if endpoint != nil && vl.agent.isExternalBgp(endpoint) {
 				//endpoint exists from where the arp is received.
 				if endpoint.PortNo == 0 {
-					log.Infof("Received ARP from BGP Peer on %s: Mac: %s", endpoint.PortNo, endpoint.MacAddrStr)
+					log.Infof("Received ARP request from BGP Peer on %d: Mac: %s", endpoint.PortNo, arpHdr.HWSrc.String())
 					//learn the mac address and portno for the endpoint
 					endpoint.PortNo = inPort
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
@@ -1122,14 +1102,13 @@ func (vl *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 			if endpoint != nil && vl.agent.isExternalBgp(endpoint) {
 				//endpoint exists from where the arp is received.
 				if endpoint.PortNo == 0 {
-					log.Infof("Received ARP from BGP Peer on %s: Mac: %s", endpoint.PortNo, endpoint.MacAddrStr)
+					log.Infof("Received ARP reply from BGP Peer on %d: Mac: %s", endpoint.PortNo, arpHdr.HWSrc.String())
 					//learn the mac address and portno for the endpoint
 					endpoint.PortNo = inPort
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
 					vl.agent.endpointDb.Set(endpoint.EndpointID, endpoint)
 					vl.AddEndpoint(endpoint)
 					//vl.resolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
-
 				}
 			}
 
@@ -1362,7 +1341,7 @@ func (vl *Vlrouter) sendArpPacketOut(srcIP, dstIP net.IP) {
 //Flushendpoints - flushes out endpoints from ovs
 func (vl *Vlrouter) FlushEndpoints(endpointType int) {
 
-	if endpointType == OFNET_EXTERNAL {
+	if endpointType == OFNET_EXTERNAL || endpointType == OFNET_EXTERNAL_BGP {
 		for id, flow := range vl.flowDb {
 			if strings.Contains(id, "external") {
 				flow.Delete()

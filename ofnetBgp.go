@@ -115,17 +115,24 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	}
 
 	self.cc = conn
-	log.Debugf("Creating the loopback port ")
-	err = self.agent.ovsDriver.CreatePort(self.intfName, "internal", 1)
-	if err != nil {
-		log.Errorf("Error creating the port: %v", err)
+	link, err := netlink.LinkByName(self.intfName)
+	if err == nil {
+		netlink.LinkSetDown(link)
+		netlink.LinkSetUp(link)
+	} else {
+		log.Debugf("Creating the Bgp loopback port ")
+		err = self.agent.ovsDriver.CreatePort(self.intfName, "internal", 1)
+		if err != nil {
+			log.Errorf("Error creating the port: %v", err)
+			return err
+		}
 	}
 
 	intfIP := fmt.Sprintf("%s/%d", self.routerIP, len)
 	log.Debugf("Creating inb01 with ", intfIP)
 	ofPortno, _ := self.agent.ovsDriver.GetOfpPortNo(self.intfName)
 
-	link, err := netlink.LinkByName(self.intfName)
+	link, err = netlink.LinkByName(self.intfName)
 	if err != nil {
 		log.Errorf("error finding link by name %v", self.intfName)
 		return err
@@ -468,7 +475,6 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 	nextHop = path.GetNexthop().String()
 
 	if nextHop == "0.0.0.0" || nextHop == self.routerIP {
-		log.Infof("Ignoreing the update since nethop = %s ",nextHop)
 		return nil
 	}
 
@@ -481,13 +487,11 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 
 	nhEpid := self.agent.getEndpointIdByIpVrf(net.ParseIP(nextHop), "default")
 
-	log.Infof("The nexthop received is %s \n", nextHop)
 	if ep := self.agent.getEndpointByID(nhEpid); ep == nil {
 		//the nexthop is not the directly connected eBgp peer
 		macAddrStr = ""
 		portNo = 0
 	} else {
-		log.Infof("Next hop ep is %+v \n", ep)
 		macAddrStr = ep.MacAddrStr
 		portNo = ep.PortNo
 	}
@@ -508,7 +512,7 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 			IpMask:       ipmask,
 			Vrf:          "default", // FIXME set VRF correctly
 			MacAddrStr:   macAddrStr,
-			Vlan:         0,
+			Vlan:         1,
 			OriginatorIp: self.agent.localIp,
 			PortNo:       portNo,
 			Timestamp:    time.Now(),
@@ -520,7 +524,6 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 		// Install the endpoint in datapath
 		// First, add the endpoint to local routing table
 		self.bgpDb.Set(epreg.EndpointID, epreg)
-		log.Infof("the endpoint bgp is adding : {%+v} \n", epreg)
 		err := self.agent.datapath.AddEndpoint(epreg)
 		if err != nil {
 			log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
@@ -528,7 +531,7 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 		}
 	} else {
 		log.Info("Received route withdraw from BGP for ", endpointIPNet)
-		//If we receive bgp route for a contiv remote endpoint , unset the external route type
+		//If we receive bgp route withdraw for a contiv remote endpoint , unset the external route type
 		if e, ok := self.bgpDb.Get(epreg.EndpointID); ok {
 			ep := e.(*OfnetEndpoint)
 			self.agent.datapath.RemoveEndpoint(ep)
