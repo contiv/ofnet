@@ -107,7 +107,7 @@ func TestMain(m *testing.M) {
 		rpcPort := uint16(VRTR_RPC_PORT + i)
 		ovsPort := uint16(VRTR_OVS_PORT + i)
 		lclIp := net.ParseIP(localIpList[i])
-		vrtrAgents[i], err = NewOfnetAgent(brName, "vrouter", lclIp, rpcPort, ovsPort)
+		vrtrAgents[i], err = NewOfnetAgent(brName, "vrouter", lclIp, rpcPort, ovsPort, nil)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -124,7 +124,7 @@ func TestMain(m *testing.M) {
 		ovsPort := uint16(VXLAN_OVS_PORT + i)
 		lclIp := net.ParseIP(localIpList[i])
 
-		vxlanAgents[i], err = NewOfnetAgent(brName, "vxlan", lclIp, rpcPort, ovsPort)
+		vxlanAgents[i], err = NewOfnetAgent(brName, "vxlan", lclIp, rpcPort, ovsPort, nil)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -141,7 +141,7 @@ func TestMain(m *testing.M) {
 		ovsPort := uint16(VLAN_OVS_PORT + i)
 		lclIp := net.ParseIP(localIpList[i])
 
-		vlanAgents[i], err = NewOfnetAgent(brName, "vlan", lclIp, rpcPort, ovsPort)
+		vlanAgents[i], err = NewOfnetAgent(brName, "vlan", lclIp, rpcPort, ovsPort, nil)
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
@@ -160,7 +160,7 @@ func TestMain(m *testing.M) {
 		portName := "inb0" + fmt.Sprintf("%d", i)
 		driver := ovsdbDriver.NewOvsDriver(brName)
 		driver.CreatePort(portName, "internal", uint(1+i))
-		vlrtrAgents[i], err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, portName)
+		vlrtrAgents[i], err = NewOfnetAgent(brName, "vlrouter", lclIp, rpcPort, ovsPort, []string{portName})
 		if err != nil {
 			log.Fatalf("Error creating ofnet agent. Err: %v", err)
 		}
