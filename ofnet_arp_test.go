@@ -15,41 +15,89 @@ import (
 
 // Verify if the flow entries are installed on vlan bridge
 func TestVlanArpRedirectFlowEntry(t *testing.T) {
+	var cfg OfnetGlobalConfig
 	for i := 0; i < NUM_AGENT; i++ {
 		brName := "vlanBridge" + fmt.Sprintf("%d", i)
+		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
 
+		// Verify ARP redirect entry in default mode (ArpProxy)
 		flowList, err := ofctlFlowDump(brName)
 		if err != nil {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
-
-		// Check if ARP Request redirect entry is installed
-		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
 		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
 			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
 			return
 		}
-		log.Infof("Found arp redirect flow %s on ovs %s", arpFlowMatch, brName)
+		log.Infof("Found arp redirect flow %s on ovs %s for arp ArpProxy", arpFlowMatch, brName)
+
+		// Verify ARP redirect entry after changing to arp ArpFlood
+		cfg.ArpMode = ArpFlood
+		GetTestVlanAgent(i).GlobalConfigUpdate(cfg)
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+		if ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("ARP Flood mode should not have route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		log.Infof("No arp redirect flow %s on ovs %s for arp ArpFlood", arpFlowMatch, brName)
+
+		// Verify ARP redirect entry after changing back to arp ArpProxy
+		cfg.ArpMode = ArpProxy
+		GetTestVlanAgent(i).GlobalConfigUpdate(cfg)
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		log.Infof("vlan arp redirect flow test successful")
 	}
 }
 
 // Verify if the flow entries are installed on vlan bridge
 func TestVxlanArpRedirectFlowEntry(t *testing.T) {
+	var cfg OfnetGlobalConfig
 	for i := 0; i < NUM_AGENT; i++ {
 		brName := "vxlanBridge" + fmt.Sprintf("%d", i)
+		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
 
+		// Verify ARP redirect entry in default mode (ArpProxy)
 		flowList, err := ofctlFlowDump(brName)
 		if err != nil {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
-
-		// Check if ARP Request redirect entry is installed
-		arpFlowMatch := fmt.Sprintf("priority=100,arp,arp_op=1 actions=CONTROLLER")
 		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
 			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
 			return
 		}
-		log.Infof("Found arp redirect flow %s on ovs %s", arpFlowMatch, brName)
+		// Verify ARP redirect entry after changing to arp ArpFlood
+		cfg.ArpMode = ArpFlood
+		GetTestVxlanAgent(i).GlobalConfigUpdate(cfg)
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+		if ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("ARP Flood mode should not have route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		// Verify ARP redirect entry after changing back to arp roxy
+		cfg.ArpMode = ArpProxy
+		GetTestVxlanAgent(i).GlobalConfigUpdate(cfg)
+		flowList, err = ofctlFlowDump(brName)
+		if err != nil {
+			t.Errorf("Error getting flow entries. Err: %v", err)
+		}
+		if !ofctlFlowMatch(flowList, 0, arpFlowMatch) {
+			t.Errorf("Could not find the route %s on ovs %s", arpFlowMatch, brName)
+			return
+		}
+		log.Infof("vxlan arp redirect flow test successful")
 	}
 }
 
