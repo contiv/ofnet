@@ -326,11 +326,11 @@ func readPacket(handle *pcap.Handle, pkt *Packet, dstPort string, done chan int)
 				}
 				ip := ipLayer.(*layers.IPv4)
 
-				fmt.Println("Received IPv4 packet from %v on %s", ip.SrcIP, dstPort)
+				fmt.Printf("Received IPv4 packet from %v on %s", ip.SrcIP, dstPort)
 				if compareIP(ip.SrcIP.To16(), net.ParseIP(pkt.IPv4.SrcIP)) {
 					if compareIP(ip.DstIP.To16(), net.ParseIP(pkt.IPv4.DstIP)) {
 						fmt.Println("Incrementing the count")
-						fmt.Println("Verified: Received IPv4 packet from %v on %s", ip.SrcIP, dstPort)
+						fmt.Printf("Verified: Received IPv4 packet from %v on %s", ip.SrcIP, dstPort)
 						verifiedCount++
 					}
 				}
