@@ -344,9 +344,9 @@ func TestMain(m *testing.M) {
 // test adding vlan
 func setupVlans() error {
 	for i := 0; i < NUM_AGENT; i++ {
-		log.Info("Index %d \n", i)
+		log.Infof("Index %d \n", i)
 		for j := 1; j < 5; j++ {
-			log.Info("Index %d \n", j)
+			log.Infof("Index %d \n", j)
 			//log.Infof("Adding Vlan %d on %s", j, localIpList[i])
 			err := vrtrAgents[i].AddNetwork(uint16(j), uint32(j), "", "tenant1")
 			if err != nil {
