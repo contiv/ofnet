@@ -698,3 +698,11 @@ func TestOfnetHostBridge(t *testing.T) {
 		log.Infof("Verified all flows are deleted")
 	}
 }
+
+func GetTestVlanAgent(i int) *OfnetAgent {
+	return vlanAgents[i]
+}
+
+func GetTestVxlanAgent(i int) *OfnetAgent {
+	return vxlanAgents[i]
+}
