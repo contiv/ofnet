@@ -58,10 +58,20 @@ type Vlrouter struct {
 	portVlanFlowDb map[uint32]*ofctrl.Flow   // Database of flow entries
 	dscpFlowDb     map[uint32][]*ofctrl.Flow // Database of flow entries
 
+	uplinkPortDb  cmap.ConcurrentMap // Database of uplink ports
 	myRouterMac   net.HardwareAddr   //Router mac used for external proxy
 	anycastMac    net.HardwareAddr   //Anycast mac used for local endpoints
 	myBgpPeer     string             // bgp neighbor
 	unresolvedEPs cmap.ConcurrentMap // unresolved endpoint map
+}
+
+// GetUplink API gets the uplink port with uplinkID from uplink DB
+func (self *Vlrouter) GetUplink(uplinkID string) *PortInfo {
+	uplink, ok := self.uplinkPortDb.Get(uplinkID)
+	if !ok {
+		return nil
+	}
+	return uplink.(*PortInfo)
 }
 
 // Create a new vlrouter instance
@@ -81,6 +91,8 @@ func NewVlrouter(agent *OfnetAgent, rpcServ *rpc.Server) *Vlrouter {
 	vlrouter.dscpFlowDb = make(map[uint32][]*ofctrl.Flow)
 	vlrouter.anycastMac, _ = net.ParseMAC("00:00:11:11:11:11")
 	vlrouter.unresolvedEPs = cmap.New()
+
+	vlrouter.uplinkPortDb = cmap.New()
 
 	return vlrouter
 }
@@ -1010,10 +1022,29 @@ func (self *Vlrouter) AddUplink(uplinkPort *PortInfo) error {
 		return err
 	}
 	self.myRouterMac = intf.HardwareAddr
+
+	self.uplinkPortDb.Set(uplinkPort.Name, uplinkPort)
 	return nil
 }
 
 func (self *Vlrouter) RemoveUplink(uplinkName string) error {
+	uplinkPort := self.GetUplink(uplinkName)
+
+	if uplinkPort == nil {
+		err := fmt.Errorf("Could not get uplink with name: %s", uplinkName)
+		return err
+	}
+
+	for _, link := range uplinkPort.MbrLinks {
+		// Uninstall the flow entry
+		portVlanFlow := self.portVlanFlowDb[link.OfPort]
+		if portVlanFlow != nil {
+			portVlanFlow.Delete()
+			delete(self.portVlanFlowDb, link.OfPort)
+		}
+	}
+
+	self.uplinkPortDb.Remove(uplinkName)
 	return nil
 }
 

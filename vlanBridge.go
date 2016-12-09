@@ -17,6 +17,7 @@ package ofnet
 // This file implements the vlan bridging datapath
 
 import (
+	"fmt"
 	"net"
 	"net/rpc"
 	"sync"
@@ -575,8 +576,21 @@ func (vl *VlanBridge) AddUplink(uplinkPort *PortInfo) error {
 func (vl *VlanBridge) RemoveUplink(uplinkName string) error {
 	uplinkPort := vl.GetUplink(uplinkName)
 
+	if uplinkPort == nil {
+		err := fmt.Errorf("Could not get uplink with name: %s", uplinkName)
+		return err
+	}
+
 	// Stop monitoring links in the port
 	for _, link := range uplinkPort.MbrLinks {
+		// Uninstall the flow entry
+		portVlanFlow := vl.portVlanFlowDb[link.OfPort]
+		if portVlanFlow != nil {
+			portVlanFlow.Delete()
+			delete(vl.portVlanFlowDb, link.OfPort)
+		}
+
+		// Remove from linkDb
 		vl.linkDb.Remove(link.Name)
 	}
 	vl.uplinkPortDb.Remove(uplinkName)
