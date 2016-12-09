@@ -10,7 +10,6 @@ import (
 	"github.com/contiv/ofnet/ofctrl"
 	"github.com/shaleman/libOpenflow/openflow13"
 	"github.com/shaleman/libOpenflow/protocol"
-	"github.com/vishvananda/netlink"
 )
 
 // Verify if the flow entries are installed on vlan bridge
@@ -101,7 +100,14 @@ func TestVxlanArpRedirectFlowEntry(t *testing.T) {
 	}
 }
 
-func vlanAddEP(epID, epgID int, add bool) error {
+// verifyGARPstats waits and checks for number of GARPs sent
+func verifyGARPstats(numGarpCycles int) bool {
+	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
+	count := vlanAgents[0].getStats("GARPSent")
+	return (count == uint64(numGarpCycles*GARPRepeats))
+}
+
+func vlanAddDelEP(epID, epgID int, add bool) error {
 	macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", epID, epID, epID))
 	ipAddr := net.ParseIP(fmt.Sprintf("10.11.%d.%d", epID, epID))
 	endpoint := EndpointInfo{
@@ -123,16 +129,19 @@ func vlanAddEP(epID, epgID int, add bool) error {
 func TestOfnetVlanGArpInject(t *testing.T) {
 	var resp bool
 
-	err1 := vlanAgents[0].AddNetwork(uint16(5), uint32(5), "", "test1")
-	err2 := vlanAgents[0].AddNetwork(uint16(6), uint32(6), "", "test1")
+	err1 := vlanAgents[0].AddNetwork(uint16(5), uint32(5), "", "testVrf")
+	err2 := vlanAgents[0].AddNetwork(uint16(6), uint32(6), "", "testVrf")
 
 	if err1 != nil || err2 != nil {
 		t.Errorf("Error adding vlan %v, %v", err1, err2)
 		return
 	}
 
+	log.Infof("Testing GARP injection.. this might take a while")
+	// =============== Endpoint Add/Del GARP test cases ================= //
+	log.Infof("Adding one EP and checking GARPs")
 	// Add one endpoint
-	err := vlanAddEP(5, 5, true)
+	err := vlanAddDelEP(5, 5, true)
 	if err != nil {
 		t.Errorf("Error adding EP")
 		return
@@ -148,51 +157,115 @@ func TestOfnetVlanGArpInject(t *testing.T) {
 	}
 
 	// Add two endpoints to another epg
-	vlanAddEP(6, 6, true)
-	log.Infof("Testing GARP injection.. this might take a while")
+	log.Infof("Adding two more EPs and checking GARPs")
+	vlanAddDelEP(6, 6, true)
 	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
-	vlanAddEP(7, 6, true)
-	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
-	count = vlanAgents[0].getStats("GARPSent")
-	if count != 4*GARPRepeats {
+	vlanAddDelEP(7, 6, true)
+	if !verifyGARPstats(4) {
 		t.Errorf("GARP stats incorrect count: %v exp: %v",
 			count, 4*GARPRepeats)
 		return
 	}
 
 	// delete one of the eps
-	vlanAddEP(6, 6, false)
+	log.Infof("Deleting one EP and injecting GARPs")
+	vlanAddDelEP(6, 6, false)
 	vlanAgents[0].InjectGARPs(6, &resp)
-	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
-	count = vlanAgents[0].getStats("GARPSent")
-	if count != 5*GARPRepeats {
+	if !verifyGARPstats(5) {
 		t.Errorf("GARP stats incorrect count: %v exp: %v",
 			count, 5*GARPRepeats)
 		return
 	}
+	// ============= Endpoint Add/Del GARP test cases end ============== //
 
+	// =============== Bonded port GARP test cases ===================== //
+	log.Infof("Creating uplink bonded port and checking GARPs")
+	bondName := "uplinkBond"
+	uplinkBond := createBondedPort(bondName, []string{"vvport300", "vvport301", "vvport302"})
 	// Test link status triggered GARP
-	link, err := addUplink(vlanAgents[0], "vvport200", 88)
+	err = addUplink(vlanAgents[0], uplinkBond)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(GARP_EXPIRY_DELAY * time.Second)
-	count = vlanAgents[0].getStats("GARPSent")
-	if count != 7*GARPRepeats {
-		netlink.LinkDel(link)
+	if !verifyGARPstats(7) {
 		t.Errorf("GARP stats incorrect count: %v exp: %v",
 			count, 7*GARPRepeats)
+		return
 	}
 
-	err = delUplink(vlanAgents[0], 88, link)
+	// Flap one of the links in the bonded port and test that no GARPs are sent
+	log.Infof("Flapping one of the links in the port and checking that GARPs are not sent")
+	setLinkUpDown("vvport300", linkDown)
+	time.Sleep(time.Second)
+	setLinkUpDown("vvport300", linkUp)
+	if !verifyGARPstats(7) {
+		t.Errorf("GARP stats incorrect count: %v exp: %v",
+			count, 7*GARPRepeats)
+		return
+	}
+
+	// Flap all of the links in the bonded port and test that GARPs are sent
+	log.Infof("Flapping all of the links in the port and checking that GARPs are sent")
+	setLinkUpDown("vvport300", linkDown)
+	setLinkUpDown("vvport301", linkDown)
+	setLinkUpDown("vvport302", linkDown)
+	time.Sleep(time.Second)
+	setLinkUpDown("vvport300", linkUp)
+	if !verifyGARPstats(9) {
+		t.Errorf("GARP stats incorrect count: %v exp: %v",
+			count, 9*GARPRepeats)
+		return
+	}
+	setLinkUpDown("vvport301", linkUp)
+	setLinkUpDown("vvport302", linkUp)
+	if !verifyGARPstats(9) {
+		t.Errorf("GARP stats incorrect count: %v exp: %v",
+			count, 9*GARPRepeats)
+		return
+	}
+
+	err = delUplink(vlanAgents[0], uplinkBond)
 	if err != nil {
 		t.Fatalf("Error deleting uplink. Err: %v", err)
 	}
+	// =============== Bonded port GARP test cases end ================== //
 
-	vlanAddEP(7, 6, false)
-	vlanAddEP(5, 5, false)
+	// =============== Single interface GARP test cases ================== //
+	log.Infof("Creating uplink port and checking GARPs")
+	portName := "upPort"
+	uplink := createPort(portName)
+	// Test link status triggered GARP
+	err = addUplink(vlanAgents[0], uplink)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	if !verifyGARPstats(11) {
+		t.Errorf("GARP stats incorrect count: %v exp: %v",
+			count, 11*GARPRepeats)
+		return
+	}
+
+	// Flap the port and test that GARPs are sent
+	log.Infof("Flapping the port and checking that GARPs are sent")
+	setLinkUpDown(portName, linkDown)
+	time.Sleep(time.Second)
+	setLinkUpDown(portName, linkUp)
+	if !verifyGARPstats(13) {
+		t.Errorf("GARP stats incorrect count: %v exp: %v",
+			count, 13*GARPRepeats)
+		return
+	}
+
+	err = delUplink(vlanAgents[0], uplink)
+	if err != nil {
+		t.Fatalf("Error deleting uplink. Err: %v", err)
+	}
+	// =============== Single interface GARP test cases end ============== //
+
+	vlanAddDelEP(7, 6, false)
+	vlanAddDelEP(5, 5, false)
 }
 
 // addEndpoint adds an endpoint
@@ -208,54 +281,6 @@ func addEndpoint(ofa *OfnetAgent, portNo uint32, vlan uint16, macAddrStr, ipAddr
 	}
 
 	return ofa.AddLocalEndpoint(endpoint)
-}
-
-// addUplink adds a dummy uplink to ofnet agent
-func addUplink(ofa *OfnetAgent, linkName string, ofpPortNo uint32) (*netlink.Veth, error) {
-	link := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{
-			Name:   linkName,
-			TxQLen: 100,
-			MTU:    1400,
-		},
-		PeerName: linkName + "peer",
-	}
-	// delete old link if it exists.. and ignore error
-	netlink.LinkDel(link)
-	time.Sleep(100 * time.Millisecond)
-
-	if err := netlink.LinkAdd(link); err != nil {
-		return nil, err
-	}
-
-	// add it to ofnet
-	err := ofa.AddUplink(ofpPortNo, linkName)
-	if err != nil {
-		return nil, err
-	}
-	time.Sleep(time.Second)
-
-	// mark the link as up
-	if err := netlink.LinkSetUp(link); err != nil {
-		return nil, err
-	}
-
-	return link, nil
-}
-
-// delUplink deletes an uplink from ofnet agent
-func delUplink(ofa *OfnetAgent, ofpPortNo uint32, link *netlink.Veth) error {
-	err := ofa.RemoveUplink(ofpPortNo)
-	if err != nil {
-		return fmt.Errorf("Error deleting uplink. Err: %v", err)
-	}
-
-	// cleanup the uplink
-	if err := netlink.LinkDel(link); err != nil {
-		return fmt.Errorf("Error deleting link: %v", err)
-	}
-
-	return nil
 }
 
 // injectArpReq injects an ARP request into ofnet
@@ -334,11 +359,15 @@ func TestVlanProxyArp(t *testing.T) {
 		return
 	}
 
+	uplinkPort := createPort("uplinkPort")
 	// add an uplink
-	link, err := addUplink(vlanAgents[0], "vvport200", 99)
+	err = addUplink(vlanAgents[0], uplinkPort)
 	if err != nil {
 		t.Fatalf("Error adding uplink. Err: %v", err)
 	}
+
+	// Wait for link up
+	time.Sleep(time.Second)
 
 	// inject an ARP request from ep1 for ep2
 	checkArpReqHandling(vlanAgents[0], 1, 0, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.2", "ArpReqRespSent", t)
@@ -350,19 +379,19 @@ func TestVlanProxyArp(t *testing.T) {
 	checkArpReqHandling(vlanAgents[0], 1, 0, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.254", "ArpReqReinject", t)
 
 	// inject ARP req from uplink to local addr
-	checkArpReqHandling(vlanAgents[0], 99, 1, "02:02:0A:01:01:FE", "", "10.1.1.254", "10.1.1.1", "ArpReqRespSent", t)
+	checkArpReqHandling(vlanAgents[0], int(uplinkPort.MbrLinks[0].OfPort), 1, "02:02:0A:01:01:FE", "", "10.1.1.254", "10.1.1.1", "ArpReqRespSent", t)
 
 	// inject ARP req from uplink to unknown
-	checkArpReqHandling(vlanAgents[0], 99, 1, "02:02:0A:01:01:FE", "", "10.1.1.254", "10.1.1.200", "ArpRequestUnknownSrcDst", t)
+	checkArpReqHandling(vlanAgents[0], int(uplinkPort.MbrLinks[0].OfPort), 1, "02:02:0A:01:01:FE", "", "10.1.1.254", "10.1.1.200", "ArpRequestUnknownSrcDst", t)
 
 	// inject ARP req from uplink to unknown dest with known src
-	checkArpReqHandling(vlanAgents[0], 99, 1, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.200", "ArpReqUnknownDestFromUplink", t)
+	checkArpReqHandling(vlanAgents[0], int(uplinkPort.MbrLinks[0].OfPort), 1, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.200", "ArpReqUnknownDestFromUplink", t)
 
 	// inject ARP req from uplink to non-local dest
-	checkArpReqHandling(vlanAgents[0], 99, 1, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.3", "ArpReqNonLocalDestFromUplink", t)
+	checkArpReqHandling(vlanAgents[0], int(uplinkPort.MbrLinks[0].OfPort), 1, "02:02:0A:01:01:01", "", "10.1.1.1", "10.1.1.3", "ArpReqNonLocalDestFromUplink", t)
 
 	// cleanup uplink
-	err = delUplink(vlanAgents[0], 99, link)
+	err = delUplink(vlanAgents[0], uplinkPort)
 	if err != nil {
 		t.Fatalf("Error deleting uplink. Err: %v", err)
 	}
