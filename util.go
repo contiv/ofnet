@@ -318,6 +318,32 @@ func (port *PortInfo) checkLinkStatus() error {
 	return nil
 }
 
+// handleLacpUpdate
+func (link *LinkInfo) handleLacpUpdate(lacpActive bool) {
+	log.Infof("Handling LACP update for link: %s, Lacp status: %+v", link.Name, lacpActive)
+	port := link.Port
+	if !lacpActive {
+		for idx, activeLink := range port.ActiveLinks {
+			if link == activeLink {
+				if idx == (len(port.ActiveLinks) - 1) {
+					port.ActiveLinks = port.ActiveLinks[:idx]
+				} else {
+					port.ActiveLinks = append(port.ActiveLinks[:idx], port.ActiveLinks[idx+1:]...)
+				}
+				break
+			}
+		}
+	} else {
+		for _, activeLink := range port.ActiveLinks {
+			if link == activeLink {
+				// Link already part of port
+				return
+			}
+		}
+		port.ActiveLinks = append(port.ActiveLinks, link)
+	}
+}
+
 // setLinkStatus sets interface link status and updates active links of the port
 func (link *LinkInfo) setLinkStatus(status linkStatus) {
 	if link.LinkStatus == status {
@@ -343,8 +369,8 @@ func (link *LinkInfo) setLinkStatus(status linkStatus) {
 	} else {
 		for idx, activeLink := range port.ActiveLinks {
 			if link == activeLink {
-				if idx == len(port.ActiveLinks) {
-					port.ActiveLinks = port.ActiveLinks[:idx-1]
+				if idx == (len(port.ActiveLinks) - 1) {
+					port.ActiveLinks = port.ActiveLinks[:idx]
 				} else {
 					port.ActiveLinks = append(port.ActiveLinks[:idx], port.ActiveLinks[idx+1:]...)
 				}

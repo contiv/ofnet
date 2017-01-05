@@ -99,6 +99,66 @@ func TestPortActiveLinksStateChange(t *testing.T) {
 	}
 }
 
+func TestPortLACPStatusChange(t *testing.T) {
+	bondName := "upBond1"
+	linkNames := []string{"vvport321", "vvport322", "vvport323", "vvport324", "vvport325"}
+	uplinkBondedPort := createBondedPort(bondName, linkNames)
+
+	err := addUplink(vlanAgents[0], uplinkBondedPort)
+	if err != nil {
+		t.Fatalf("Uplink bonded port creation failed for vlanagent: %+v", err)
+	}
+
+	defer delUplink(vlanAgents[0], uplinkBondedPort)
+
+	vlanBr := vlanAgents[0].datapath.(*VlanBridge)
+	vlanUplink := vlanBr.GetUplink(bondName)
+
+	if len(linkNames) != len(vlanUplink.ActiveLinks) {
+		t.Fatalf("Num active links not equal to num interfaces added.")
+	}
+
+	// Check LACP Down event processing
+	lacpDownUpd := LinkUpdateInfo{LinkName: linkNames[0], LacpStatus: false}
+	portUpd := PortUpdate{UpdateType: LacpUpdate, UpdateInfo: lacpDownUpd}
+	portUpds := PortUpdates{PortName: bondName, Updates: []PortUpdate{portUpd}}
+	err = vlanAgents[0].UpdateUplink(uplinkBondedPort.Name, portUpds)
+	if err != nil {
+		t.Fatalf("Error processing update uplink. Err: %+v", err)
+	}
+
+	if len(linkNames)-1 != len(vlanUplink.ActiveLinks) {
+		t.Fatalf("LACP down port update did not update active links")
+	}
+
+	// Check LACP Up event processing
+	lacpUpUpd := LinkUpdateInfo{LinkName: linkNames[0], LacpStatus: true}
+	portUpd = PortUpdate{UpdateType: LacpUpdate, UpdateInfo: lacpUpUpd}
+	portUpds = PortUpdates{PortName: bondName, Updates: []PortUpdate{portUpd}}
+	err = vlanAgents[0].UpdateUplink(uplinkBondedPort.Name, portUpds)
+	if err != nil {
+		t.Fatalf("Error processing update uplink. Err: %+v", err)
+	}
+
+	if len(linkNames) != len(vlanUplink.ActiveLinks) {
+		t.Fatalf("LACP up port update did not update active links")
+	}
+
+	// Test multiple events
+	link1Upd := PortUpdate{UpdateType: LacpUpdate, UpdateInfo: LinkUpdateInfo{LinkName: linkNames[0], LacpStatus: false}}
+	link2Upd := PortUpdate{UpdateType: LacpUpdate, UpdateInfo: LinkUpdateInfo{LinkName: linkNames[1], LacpStatus: false}}
+	link3Upd := PortUpdate{UpdateType: LacpUpdate, UpdateInfo: LinkUpdateInfo{LinkName: linkNames[2], LacpStatus: false}}
+	portUpds = PortUpdates{PortName: bondName, Updates: []PortUpdate{link1Upd, link2Upd, link3Upd}}
+	err = vlanAgents[0].UpdateUplink(uplinkBondedPort.Name, portUpds)
+	if err != nil {
+		t.Fatalf("Error processing update uplink. Err: %+v", err)
+	}
+
+	if len(linkNames)-3 != len(vlanUplink.ActiveLinks) {
+		t.Fatalf("Mulitple LACP down port update did not update active links")
+	}
+}
+
 func createPort(portName string) *PortInfo {
 	var port PortInfo
 	link := LinkInfo{
