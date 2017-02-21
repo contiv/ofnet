@@ -272,7 +272,7 @@ func (sw *OvsSwitch) DeleteEndpoint(intfName string) error {
 // AddPeer creates a VTEP interface
 func (sw *OvsSwitch) AddPeer(vtepIP string) error {
 	// Setup VTEPs only in vxlan and vrouter mode
-	if sw.netType != "vxlan" || sw.netType != "vrouter" {
+	if sw.netType != "vxlan" && sw.netType != "vrouter" {
 		return nil
 	}
 
@@ -311,7 +311,7 @@ func (sw *OvsSwitch) AddPeer(vtepIP string) error {
 // RemovePeer deletes a VTEP
 func (sw *OvsSwitch) RemovePeer(vtepIP string) error {
 	// delete VTEPs only in vxlan and vrouter mode
-	if sw.netType != "vxlan" || sw.netType != "vrouter" {
+	if sw.netType != "vxlan" && sw.netType != "vrouter" {
 		return nil
 	}
 
