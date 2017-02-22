@@ -1,5 +1,4 @@
-
-.PHONY: all build test
+.PHONY: all build update test start stop host-build host-test
 
 all: build test
 
