@@ -1,7 +1,7 @@
 {
 	"ImportPath": "github.com/contiv/ofnet",
-	"GoVersion": "go1.6",
-	"GodepVersion": "v74",
+	"GoVersion": "go1.7",
+	"GodepVersion": "v79",
 	"Packages": [
 		"./..."
 	],
@@ -35,8 +35,8 @@
 		},
 		{
 			"ImportPath": "github.com/contiv/libovsdb",
-			"Comment": "v0.1-10-gb5d4dd4",
-			"Rev": "b5d4dd420f593267b1a699020a7387b35b891efc"
+			"Comment": "v0.1-12-gd0061a5",
+			"Rev": "d0061a53e3588f553e0f56090d1b8d950746eff4"
 		},
 		{
 			"ImportPath": "github.com/eapache/channels",
@@ -249,15 +249,15 @@
 		},
 		{
 			"ImportPath": "github.com/vishvananda/netlink",
-			"Rev": "77483a0e697ebcc2584461e9624b611767e7d203"
+			"Rev": "fe3b5664d23a11b52ba59bece4ff29c52772a56b"
 		},
 		{
 			"ImportPath": "github.com/vishvananda/netlink/nl",
-			"Rev": "77483a0e697ebcc2584461e9624b611767e7d203"
+			"Rev": "fe3b5664d23a11b52ba59bece4ff29c52772a56b"
 		},
 		{
 			"ImportPath": "github.com/vishvananda/netns",
-			"Rev": "493029407eeb434d0c2d44e02ea072ff2488d322"
+			"Rev": "54f0e4339ce73702a0607f49922aaa1e749b418d"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh",
@@ -274,10 +274,6 @@
 		{
 			"ImportPath": "golang.org/x/net/http2/hpack",
 			"Rev": "075e191f18186a8ff2becaf64478e30f4545cdad"
-		},
-		{
-			"ImportPath": "golang.org/x/net/http2/hpack",
-			"Rev": "195180cfebf7362bd243a52477697895128c8777"
 		},
 		{
 			"ImportPath": "golang.org/x/net/internal/timeseries",
@@ -310,22 +306,6 @@
 		},
 		{
 			"ImportPath": "google.golang.org/grpc/codes",
-			"Rev": "a202995ce9a99c7d65875ba9f0cf04ff43169dd5"
-		},
-		{
-			"ImportPath": "google.golang.org/grpc/credentials",
-			"Rev": "a202995ce9a99c7d65875ba9f0cf04ff43169dd5"
-		},
-		{
-			"ImportPath": "google.golang.org/grpc/grpclog",
-			"Rev": "a202995ce9a99c7d65875ba9f0cf04ff43169dd5"
-		},
-		{
-			"ImportPath": "google.golang.org/grpc/metadata",
-			"Rev": "a202995ce9a99c7d65875ba9f0cf04ff43169dd5"
-		},
-		{
-			"ImportPath": "google.golang.org/grpc/transport",
 			"Comment": "v1.0.0-164-gedc5ccf",
 			"Rev": "edc5ccf8cbfd321723e26d2cf177b05c16132ad9"
 		},
