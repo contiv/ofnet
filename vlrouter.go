@@ -1152,6 +1152,16 @@ func (self *Vlrouter) RemoveUplink(uplinkName string) error {
 	return nil
 }
 
+// AddHostPort is not implemented
+func (self *Vlrouter) AddHostPort(hp HostPortInfo) error {
+	return nil
+}
+
+// RemoveHostPort is not implemented
+func (self *Vlrouter) RemoveHostPort(hp uint32) error {
+	return nil
+}
+
 // AddSvcSpec adds a service spec to proxy
 func (self *Vlrouter) AddSvcSpec(svcName string, spec *ServiceSpec) error {
 	return self.svcProxy.AddSvcSpec(svcName, spec)
