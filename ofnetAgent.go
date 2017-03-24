@@ -121,12 +121,17 @@ type HostPortInfo struct {
 	Kind    string           // NAT or Regular
 }
 
-const HOST_SNAT_DENY_PRIORITY = 101    // Priority for host snat deny
-const DNS_FLOW_MATCH_PRIORITY = 100    // Priority for dns match flows
-const FLOW_MATCH_PRIORITY = 100        // Priority for all match flows
-const FLOW_FLOOD_PRIORITY = 10         // Priority for flood entries
-const FLOW_MISS_PRIORITY = 1           // priority for table miss flow
-const FLOW_POLICY_PRIORITY_OFFSET = 10 // Priority offset for policy rules
+const (
+	DNS_FLOW_MATCH_PRIORITY             = 100 // Priority for dns match flows
+	FLOW_MATCH_PRIORITY                 = 100 // Priority for all match flows
+	FLOW_FLOOD_PRIORITY                 = 10  // Priority for flood entries
+	FLOW_MISS_PRIORITY                  = 1   // priority for table miss flow
+	FLOW_POLICY_PRIORITY_OFFSET         = 10  // Priority offset for policy rules
+	LOCAL_ENDPOINT_FLOW_TAGGED_PRIORITY = 103 // Priority for local tagged endpoints (currently used in l3 mode)
+	LOCAL_ENDPOINT_FLOW_PRIORITY        = 102 //Priority for local untagged endpoints (currently used in l3 mode)
+	EXTERNAL_FLOW_PRIORITY              = 101 // Priority for external flows (eg bgp routes)
+	HOST_SNAT_DENY_PRIORITY             = 101 // Priority for host snat deny
+)
 
 const (
 	VLAN_TBL_ID           = 1
@@ -143,7 +148,7 @@ const (
 // Create a new Ofnet agent and initialize it
 func NewOfnetAgent(bridgeName string, dpName string, localIp net.IP, rpcPort uint16,
 	ovsPort uint16, uplinkInfo []string) (*OfnetAgent, error) {
-	log.Infof("Creating new ofnet agent for %s,%s,%d,%d,%d,%v \n", bridgeName, dpName, localIp, rpcPort, ovsPort)
+	log.Infof("Creating new ofnet agent for %s,%s,%d,%d,%d\n", bridgeName, dpName, localIp, rpcPort, ovsPort)
 	agent := new(OfnetAgent)
 
 	// Init params
@@ -156,9 +161,6 @@ func NewOfnetAgent(bridgeName string, dpName string, localIp net.IP, rpcPort uin
 		intf, err := net.InterfaceByName(uplinkInfo[0])
 		if err == nil {
 			agent.localMac = intf.HardwareAddr.String()
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 	agent.masterDb = make(map[string]*OfnetNode)

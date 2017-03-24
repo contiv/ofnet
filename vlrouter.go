@@ -257,7 +257,7 @@ func (vl *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
 	// Install the IP address
 	ipFlow, err := vl.ipTable.NewFlow(ofctrl.FlowMatch{
-		Priority:  FLOW_MATCH_PRIORITY + 3,
+		Priority:  LOCAL_ENDPOINT_FLOW_TAGGED_PRIORITY,
 		Ethertype: 0x0800,
 		VlanId:    endpoint.Vlan,
 		IpDa:      &endpoint.IpAddr,
@@ -269,7 +269,7 @@ func (vl *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	ipFlow.PopVlan()
 
 	ipFlow2, err := vl.ipTable.NewFlow(ofctrl.FlowMatch{
-		Priority:  FLOW_MATCH_PRIORITY + 2,
+		Priority:  LOCAL_ENDPOINT_FLOW_PRIORITY,
 		Ethertype: 0x0800,
 		IpDa:      &endpoint.IpAddr,
 	})
@@ -598,7 +598,7 @@ func (vl *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	//nexthopEp := vl.agent.getEndpointByIpVrf(net.ParseIP(vl.agent.GetNeighbor()), "default")
 	if vl.agent.isExternal(endpoint) {
 		endpoint.Vlan = 0
-		priority += 1
+		priority = EXTERNAL_FLOW_PRIORITY
 		flowId = flowId + "external"
 	} else {
 		//All Contiv endpoints will be stamped with originator host mac
@@ -992,7 +992,7 @@ func (vl *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 				proxyMac := vl.svcProxy.GetSvcProxyMAC(arpHdr.IPDst)
 				if proxyMac == "" {
 					// If we dont know the IP address, dont send an ARP response
-					log.Infof("Received ARP request for unknown IP: %v", arpHdr.IPDst)
+					log.Debugf("Received ARP request for unknown IP: %v", arpHdr.IPDst)
 					vl.agent.incrStats("ArpReqUnknownDest")
 					return
 				}

@@ -116,7 +116,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 
 	self.cc = conn
 	link, err := netlink.LinkByName(self.intfName)
-	if err == nil {
+	if err == nil && link != nil {
 		netlink.LinkSetDown(link)
 		netlink.LinkSetUp(link)
 	} else {
@@ -244,7 +244,9 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	3) Finally delete all routes learnt on the nexthop bgp port.
 	4) Mark the routes learn via json rpc as unresolved
 	*/
-
+	if self.myBgpPeer == "" {
+		return nil
+	}
 	log.Infof("Received DeleteProtoNeighbor to delete bgp neighbor %v", self.myBgpPeer)
 	n := &bgpconf.Neighbor{
 		Config: bgpconf.NeighborConfig{
