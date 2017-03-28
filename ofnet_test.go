@@ -43,6 +43,7 @@ const GARP_EXPIRY_DELAY = (GARPRepeats + 1) * GARPDELAY
 const NUM_HOST_BRIDGE = 1
 const TOTAL_AGENTS = (3 * NUM_AGENT) + NUM_VLRTR_AGENT + NUM_HOST_BRIDGE
 const HB_AGENT_INDEX = (3 * NUM_AGENT) + NUM_VLRTR_AGENT
+const testHostPort = 555
 
 var vrtrMasters [NUM_MASTER]*OfnetMaster
 var vxlanMasters [NUM_MASTER]*OfnetMaster
@@ -339,6 +340,32 @@ func TestMain(m *testing.M) {
 	// done
 	os.Exit(exitCode)
 
+}
+func setupHostPorts() {
+	for i := 0; i < NUM_AGENT; i++ {
+		hpMacStr := fmt.Sprintf("00:11:22:33:44:%02x", i)
+		hpIpStr := fmt.Sprintf("172.20.20.%02x/16", i)
+		hpMac, _ := net.ParseMAC(hpMacStr)
+		hpi := HostPortInfo{
+			PortNo:  uint32(testHostPort + i),
+			MacAddr: hpMac,
+			IpAddr:  hpIpStr,
+			Kind:    "NAT",
+		}
+		err := vrtrAgents[i].AddHostPort(hpi)
+		if err != nil {
+			log.Fatalf("Error adding host port to vrtr. Err: %v", err)
+		}
+	}
+}
+
+func cleanupHostPorts() {
+	for i := 0; i < NUM_AGENT; i++ {
+		err := vrtrAgents[i].RemoveHostPort(uint32(testHostPort + i))
+		if err != nil {
+			log.Fatalf("Error removing host port from vrtr. Err: %v", err)
+		}
+	}
 }
 
 // test adding vlan

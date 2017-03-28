@@ -371,11 +371,11 @@ func TestSvcProxyInterface(t *testing.T) {
 
 	// verify DNAT flows
 	for _, cIP := range clientIPs {
-		dNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5600 actions=set_field:9600->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		dNFlow1 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5600 actions=set_field:9600->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:%d", cIP, DST_GRP_TBL_ID)
 		checkFlows(t, brName, "TCP dNAT flow for "+cIP, dNFlow1, SRV_PROXY_DNAT_TBL_ID)
-		dNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5602 actions=set_field:9602->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		dNFlow2 := fmt.Sprintf("priority=100,tcp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5602 actions=set_field:9602->tcp_dst,set_field:20.1.1.22->ip_dst,goto_table:%d", cIP, DST_GRP_TBL_ID)
 		checkFlows(t, brName, "TCP dNAT flow for "+cIP, dNFlow2, SRV_PROXY_DNAT_TBL_ID)
-		dNFlow3 := fmt.Sprintf("priority=100,udp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5601 actions=set_field:9600->udp_dst,set_field:20.1.1.22->ip_dst,goto_table:3", cIP)
+		dNFlow3 := fmt.Sprintf("priority=100,udp,nw_src=%s,nw_dst=10.254.0.10,tp_dst=5601 actions=set_field:9600->udp_dst,set_field:20.1.1.22->ip_dst,goto_table:%d", cIP, DST_GRP_TBL_ID)
 		checkFlows(t, brName, "UDP dNAT flow for "+cIP, dNFlow3, SRV_PROXY_DNAT_TBL_ID)
 	}
 

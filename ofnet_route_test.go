@@ -16,9 +16,22 @@ import (
 	"google.golang.org/grpc"
 )
 
+func verifyHostNAT(t *testing.T, flowList []string, tableId int, flow string, expectFlow bool) {
+	if expectFlow != ofctlFlowMatch(flowList, tableId, flow) {
+		if expectFlow {
+			t.Errorf("Expected %s in table %d -- not found", flow, tableId)
+		} else {
+			t.Errorf("Unexpected %s in table %d", flow, tableId)
+		}
+
+		log.Infof("Flowlist: %v", flowList)
+	}
+}
+
 // Test adding/deleting Vrouter routes
 func TestOfnetVrouteAddDelete(t *testing.T) {
 	for iter := 0; iter < NUM_ITER; iter++ {
+		setupHostPorts()
 		for i := 0; i < NUM_AGENT; i++ {
 			j := i + 1
 			macAddr, _ := net.ParseMAC(fmt.Sprintf("02:02:02:%02x:%02x:%02x", j, j, j))
@@ -27,12 +40,14 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			if j%2 == 0 {
 				ipv6Addr = net.ParseIP(fmt.Sprintf("2016::%d:%d", j, j))
 			}
+			hostPvtIP := net.ParseIP(fmt.Sprintf("172.20.20.%d", uint32(NUM_AGENT+2)))
 			endpoint := EndpointInfo{
-				PortNo:   uint32(NUM_AGENT + 2),
-				MacAddr:  macAddr,
-				Vlan:     1,
-				IpAddr:   ipAddr,
-				Ipv6Addr: ipv6Addr,
+				PortNo:    uint32(NUM_AGENT + 2),
+				MacAddr:   macAddr,
+				Vlan:      1,
+				IpAddr:    ipAddr,
+				Ipv6Addr:  ipv6Addr,
+				HostPvtIP: hostPvtIP,
 			}
 
 			log.Infof("Installing local vrouter endpoint: %+v", endpoint)
@@ -55,6 +70,22 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
+
+			log.Infof("Flowlist: %v", flowList)
+			// verify ingress host NAT flows
+			hpInMatch := fmt.Sprintf("priority=100,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
+			verifyHostNAT(t, flowList, 0, hpInMatch, true)
+			hpDnatMatch := fmt.Sprintf("priority=100,ip,in_port=%d,nw_dst=172.20.20.%d actions=set_field:02:02:02:%02x:%02x:%02x->eth_dst,set_field:10.10.%d.%d->ip_dst,write_metadata:0x100000000/0xff00000000,goto_table:%d", testHostPort+i, NUM_AGENT+2, i+1, i+1, i+1, i+1, i+1, SRV_PROXY_SNAT_TBL_ID)
+			verifyHostNAT(t, flowList, HOST_DNAT_TBL_ID, hpDnatMatch, true)
+			// verify egress host NAT flows
+			ipMiss := fmt.Sprintf("priority=1 actions=goto_table:%d", HOST_SNAT_TBL_ID)
+			verifyHostNAT(t, flowList, IP_TBL_ID, ipMiss, true)
+			hostSnat := fmt.Sprintf("priority=100,ip,in_port=%d actions=set_field:00:11:22:33:44:%02x->eth_dst,set_field:172.20.20.%d->ip_src,output:%d", NUM_AGENT+2, i, NUM_AGENT+2, testHostPort+i)
+			verifyHostNAT(t, flowList, HOST_SNAT_TBL_ID, hostSnat, true)
+
+			denyFlow := "priority=101,ip,nw_dst=172.20.0.0/16 actions=drop"
+			verifyHostNAT(t, flowList, HOST_SNAT_TBL_ID, denyFlow, true)
+
 			// verify flow entry exists
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
@@ -73,6 +104,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 					}
 					log.Infof("Found IPv6 ipflow %s on ovs %s", ipv6FlowMatch, brName)
 				}
+
 			}
 		}
 
@@ -103,6 +135,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 				return
 			}
 		}
+		cleanupHostPorts()
 
 		log.Infof("Deleted endpoints. Verifying they are gone")
 
@@ -114,6 +147,16 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
+			// verify ingress host NAT flows
+			hpInMatch := fmt.Sprintf("priority=100,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
+			verifyHostNAT(t, flowList, 0, hpInMatch, false)
+			hpDnatMatch := fmt.Sprintf("priority=100,ip,in_port=%d,nw_dst=172.20.20.%d actions=set_field:02:02:02:%02x:%02x:%02x->eth_dst,set_field:10.10.%d.%d->ip_dst,write_metadata:0x100000000/0xff00000000,goto_table:%d", testHostPort+i, NUM_AGENT+2, i+1, i+1, i+1, i+1, i+1, SRV_PROXY_SNAT_TBL_ID)
+			verifyHostNAT(t, flowList, HOST_DNAT_TBL_ID, hpDnatMatch, false)
+			hostSnat := fmt.Sprintf("priority=100,ip,in_port=%d actions=set_field:00:11:22:33:44:%02x->eth_dst,set_field:172.20.20.%d->ip_src,output:%d", NUM_AGENT+2, i, NUM_AGENT+2, testHostPort+i)
+			verifyHostNAT(t, flowList, HOST_SNAT_TBL_ID, hostSnat, false)
+
+			denyFlow := "priority=101,ip,nw_dst=172.20.0.0/16 actions=drop"
+			verifyHostNAT(t, flowList, HOST_SNAT_TBL_ID, denyFlow, false)
 			// verify flow entry exists
 			for j := 0; j < NUM_AGENT; j++ {
 				k := j + 1
