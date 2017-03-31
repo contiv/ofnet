@@ -595,12 +595,14 @@ func (self *OfnetBgp) InspectProto() (interface{}, error) {
 	return OfnetBgpInspect, nil
 }
 
-func (self *OfnetBgp) SetRouterInfo(uplink *PortInfo) {
+func (self *OfnetBgp) SetRouterInfo(uplink *PortInfo) error {
 	log.Infof("Received Set Router info for %v \n", uplink)
-	if uplink != nil && len(uplink.MbrLinks) != 1 {
-		log.Errorf("OfnetBgp currently supports only one uplink interface. Num uplinks active: %d", len(uplink.ActiveLinks))
-		return
+	if uplink != nil && len(uplink.MbrLinks) == 0 {
+		return fmt.Errorf("L3 routing mode currently requires atleast one uplink interface. Num uplinks active: 0")
 	}
 	uplink.checkLinkStatus()
+
 	self.uplinkPort = uplink
+	self.uplinkPort.MbrLinks = uplink.MbrLinks[:1]
+	return nil
 }
