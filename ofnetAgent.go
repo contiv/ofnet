@@ -872,7 +872,14 @@ func (self *OfnetAgent) UpdateUplink(uplinkName string, portUpds PortUpdates) er
 // RemoveUplink remove an uplink to the switch
 func (self *OfnetAgent) RemoveUplink(uplinkName string) error {
 	// Call the datapath
-	return self.datapath.RemoveUplink(uplinkName)
+	err := self.datapath.RemoveUplink(uplinkName)
+	if err != nil {
+		return err
+	}
+	if self.protopath != nil {
+		self.protopath.SetRouterInfo(nil)
+	}
+	return nil
 }
 
 // AddSvcSpec adds a service spec to proxy
@@ -996,18 +1003,20 @@ func (self *OfnetAgent) AddBgp(routerIP string, As string, neighborAs string, pe
 		log.Errorf("Ofnet is not initialized in routing mode")
 		return errors.New("Ofnet not in routing mode")
 	}
+
 	routerInfo := &OfnetProtoRouterInfo{
 		ProtocolType: "bgp",
 		RouterIP:     routerIP,
 		As:           As,
 	}
+
 	neighborInfo := &OfnetProtoNeighborInfo{
 		ProtocolType: "bgp",
 		NeighborIP:   peer,
 		As:           neighborAs,
 	}
 	rinfo := self.GetRouterInfo()
-	if rinfo != nil {
+	if rinfo != nil && len(rinfo.RouterIP) != 0 {
 		self.DeleteBgp()
 	}
 

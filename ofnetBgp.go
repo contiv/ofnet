@@ -97,6 +97,10 @@ Bgp serve routine does the following:
 */
 func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 
+	if self.uplinkPort == nil {
+		return fmt.Errorf("Unable to start protocol server without uplink")
+	}
+
 	log.Infof("Starting the Bgp Server with %#v", routerInfo)
 
 	//Flush previous external endpoints if any
@@ -344,6 +348,7 @@ func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
 	if self.routerIP == "" {
 		return nil
 	}
+
 	routerInfo := &OfnetProtoRouterInfo{
 		ProtocolType: "bgp",
 		RouterIP:     self.routerIP,
@@ -596,8 +601,12 @@ func (self *OfnetBgp) InspectProto() (interface{}, error) {
 }
 
 func (self *OfnetBgp) SetRouterInfo(uplink *PortInfo) error {
-	log.Infof("Received Set Router info for %v \n", uplink)
-	if uplink != nil && len(uplink.MbrLinks) == 0 {
+	log.Infof("Received Set Router info for %+v \n", uplink)
+	if uplink == nil {
+		self.uplinkPort = nil
+		return nil
+	}
+	if len(uplink.MbrLinks) == 0 {
 		return fmt.Errorf("L3 routing mode currently requires atleast one uplink interface. Num uplinks active: 0")
 	}
 	uplink.checkLinkStatus()

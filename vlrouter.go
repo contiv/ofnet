@@ -1006,7 +1006,7 @@ func (vl *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 						if vl.agent.GetRouterInfo() != nil {
 							uplink := vl.agent.GetRouterInfo().UplinkPort
 
-							if uplink != nil && len(uplink.MbrLinks) == 0 {
+							if uplink == nil || len(uplink.MbrLinks) == 0 {
 								log.Errorf("Error getting interface information. Err: No member links present")
 								return
 							}
@@ -1147,12 +1147,12 @@ func (vl *Vlrouter) resolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 func (vl *Vlrouter) AddUplink(uplinkPort *PortInfo) error {
 	log.Infof("Adding uplink: %+v", uplinkPort)
 
-	if len(uplinkPort.MbrLinks) != 1 {
-		err := fmt.Errorf("Only one uplink interface supported in vlrouter mode. Num uplinks configured: %d", len(uplinkPort.MbrLinks))
-		log.Errorf("Error adding uplink: %+v", err)
+	if len(uplinkPort.MbrLinks) == 0 {
+		err := fmt.Errorf("Atleast one uplink is needed to be configured for routing mode. Num uplinks configured: %d", len(uplinkPort.MbrLinks))
 		return err
 	}
 
+	uplinkPort.MbrLinks = uplinkPort.MbrLinks[:1]
 	linkInfo := uplinkPort.MbrLinks[0]
 	vl.uplinkOfp = linkInfo.OfPort
 	dnsUplinkFlow, err := vl.inputTable.NewFlow(ofctrl.FlowMatch{
@@ -1297,11 +1297,11 @@ func (vl *Vlrouter) sendArpPacketOut(srcIP, dstIP net.IP) {
 	for uplinkObj := range vl.uplinkPortDb.IterBuffered() {
 		uplink := uplinkObj.Val.(*PortInfo)
 		uplinkMemberLink = uplink.getActiveLink()
-		if uplinkMemberLink == nil {
-			log.Debugf("No active interface on uplink. Not sending ARP for IP:%s \n", dstIP.String())
-			return
-		}
 		break
+	}
+	if uplinkMemberLink == nil {
+		log.Debugf("No active interface on uplink. Not sending ARP for IP:%s \n", dstIP.String())
+		return
 	}
 
 	ofPortno := uplinkMemberLink.OfPort

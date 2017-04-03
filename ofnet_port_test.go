@@ -47,12 +47,6 @@ func TestUplinkPortCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Uplink port deletion failed for vlrouter agent: %+v", err)
 	}
-
-	// Check uplink bonded port creation in vlrouter mode
-	err = addUplink(vlrtrAgents[0], uplinkBondedPort)
-	if err == nil {
-		t.Fatalf("Uplink port creation with multiple interfaces expected to fail for vlrouter agent: %+v", err)
-	}
 }
 
 func TestPortActiveLinksStateChange(t *testing.T) {
