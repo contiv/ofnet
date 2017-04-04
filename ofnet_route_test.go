@@ -344,9 +344,14 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 	routerIP := "50.1.1.1/24"
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
-
+	uplinkSinglePort := createPort("upPort")
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
-		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		err := addUplink(vlrtrAgents[0], uplinkSinglePort)
+		if err != nil {
+			t.Fatalf("Uplink port creation failed for vlrouter agent: %+v", err)
+		}
+		time.Sleep(2 * time.Second)
+		err = vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
 		if err != nil {
 			t.Errorf("Error adding Bgp Neighbor: %v", err)
 			return
@@ -383,6 +388,10 @@ func TestOfnetBgpPeerAddDelete(t *testing.T) {
 			t.Errorf("Neighbor is not deleted: %v", err)
 			return
 		}
+		err = delUplink(vlrtrAgents[0], uplinkSinglePort)
+		if err != nil {
+			t.Fatalf("Uplink port deletion failed for vlrouter agent: %+v", err)
+		}
 	}
 }
 
@@ -393,11 +402,15 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 	routerIP := "50.1.1.1/24"
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
-
+	uplinkSinglePort := createPort("upPort")
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
-		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		err := addUplink(vlrtrAgents[0], uplinkSinglePort)
 		if err != nil {
-			log.Infof("THE ERROR IS %s", err)
+			t.Fatalf("Uplink port creation failed for vlrouter agent: %+v", err)
+		}
+		time.Sleep(2 * time.Second)
+		err = vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		if err != nil {
 			t.Errorf("Error adding Bgp Neighbor: %v", err)
 			return
 		}
@@ -434,9 +447,8 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 			return
 		}
-
 		// verify flow entry exists
-		ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipFlowMatch := fmt.Sprintf("priority=102,ip,nw_dst=20.20.20.20")
 		ipTableId := IP_TBL_ID
 		if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 			t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
@@ -483,13 +495,17 @@ func TestOfnetVlrouteAddDelete(t *testing.T) {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
 		// verify flow entry exists
-		ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipFlowMatch = fmt.Sprintf("priority=102,ip,nw_dst=20.20.20.20")
 		ipTableId = IP_TBL_ID
 		if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 			t.Errorf("Still found the flow %s on ovs %s", ipFlowMatch, brName)
 		}
 		// verify IPv6 flow entry exists
-		err = vlrtrAgents[i].DeleteBgp()
+		vlrtrAgents[i].DeleteBgp()
+		err = delUplink(vlrtrAgents[0], uplinkSinglePort)
+		if err != nil {
+			t.Fatalf("Uplink port deletion failed for vlrouter agent: %+v", err)
+		}
 		log.Infof("Verified all flows are deleted")
 	}
 }
@@ -502,9 +518,13 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 	routerIP := "50.1.1.2/24"
 	as := "65002"
 	//Add Bgp neighbor and check if it is successful
-
+	uplinkSinglePort := createPort("upPort")
 	for i := 0; i < NUM_VLRTR_AGENT; i++ {
-		err := vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
+		err := addUplink(vlrtrAgents[0], uplinkSinglePort)
+		if err != nil {
+			t.Fatalf("Uplink port creation failed for vlrouter agent: %+v", err)
+		}
+		err = vlrtrAgents[i].AddBgp(routerIP, as, neighborAs, peer)
 		time.Sleep(5 * time.Second)
 		if err != nil {
 			t.Errorf("Error adding Bgp Neighbor: %v", err)
@@ -529,7 +549,7 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
-		ipFlowMatch := fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipFlowMatch := fmt.Sprintf("priority=101,ip,nw_dst=20.20.20.20")
 		ipTableId := IP_TBL_ID
 		if !ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 			t.Errorf("Could not find the route %s on ovs %s", ipFlowMatch, brName)
@@ -550,12 +570,16 @@ func TestOfnetBgpVlrouteAddDelete(t *testing.T) {
 			t.Errorf("Error getting flow entries. Err: %v", err)
 		}
 
-		ipFlowMatch = fmt.Sprintf("priority=100,ip,nw_dst=20.20.20.20")
+		ipFlowMatch = fmt.Sprintf("priority=101,ip,nw_dst=20.20.20.20")
 		ipTableId = IP_TBL_ID
 		if ofctlFlowMatch(flowList, ipTableId, ipFlowMatch) {
 			t.Errorf("Found the route %s on ovs %s which was withdrawn", ipFlowMatch, brName)
 			return
 		}
 		log.Infof("ipflow %s on ovs %s has been deleted from OVS", ipFlowMatch, brName)
+		err = delUplink(vlrtrAgents[0], uplinkSinglePort)
+		if err != nil {
+			t.Fatalf("Uplink port deletion failed for vlrouter agent: %+v", err)
+		}
 	}
 }
