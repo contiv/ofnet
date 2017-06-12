@@ -2,14 +2,15 @@ package ofnet
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"github.com/contiv/ofnet/ofctrl"
-	"github.com/shaleman/libOpenflow/openflow13"
-	"github.com/shaleman/libOpenflow/protocol"
 	"net"
 	"runtime"
 	"strings"
 	"testing"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/contiv/libOpenflow/openflow13"
+	"github.com/contiv/libOpenflow/protocol"
+	"github.com/contiv/ofnet/ofctrl"
 )
 
 func assertOnTrue(t *testing.T, val bool, msg string) {
