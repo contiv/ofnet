@@ -73,7 +73,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 
 			log.Infof("Flowlist: %v", flowList)
 			// verify ingress host NAT flows
-			hpInMatch := fmt.Sprintf("priority=100,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
+			hpInMatch := fmt.Sprintf("priority=99,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
 			verifyHostNAT(t, flowList, 0, hpInMatch, true)
 			hpDnatMatch := fmt.Sprintf("priority=100,ip,in_port=%d,nw_dst=172.20.20.%d actions=set_field:02:02:02:%02x:%02x:%02x->eth_dst,set_field:10.10.%d.%d->ip_dst,write_metadata:0x100000000/0xff00000000,goto_table:%d", testHostPort+i, NUM_AGENT+2, i+1, i+1, i+1, i+1, i+1, SRV_PROXY_SNAT_TBL_ID)
 			verifyHostNAT(t, flowList, HOST_DNAT_TBL_ID, hpDnatMatch, true)
@@ -148,7 +148,7 @@ func TestOfnetVrouteAddDelete(t *testing.T) {
 				t.Errorf("Error getting flow entries. Err: %v", err)
 			}
 			// verify ingress host NAT flows
-			hpInMatch := fmt.Sprintf("priority=100,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
+			hpInMatch := fmt.Sprintf("priority=99,in_port=%d actions=goto_table:%d", testHostPort+i, HOST_DNAT_TBL_ID)
 			verifyHostNAT(t, flowList, 0, hpInMatch, false)
 			hpDnatMatch := fmt.Sprintf("priority=100,ip,in_port=%d,nw_dst=172.20.20.%d actions=set_field:02:02:02:%02x:%02x:%02x->eth_dst,set_field:10.10.%d.%d->ip_dst,write_metadata:0x100000000/0xff00000000,goto_table:%d", testHostPort+i, NUM_AGENT+2, i+1, i+1, i+1, i+1, i+1, SRV_PROXY_SNAT_TBL_ID)
 			verifyHostNAT(t, flowList, HOST_DNAT_TBL_ID, hpDnatMatch, false)
