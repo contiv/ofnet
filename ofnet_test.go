@@ -62,6 +62,7 @@ var localIpList []string
 func TestMain(m *testing.M) {
 	var err error
 
+	EnableInlineDNS = true
 	for i := 0; i < NUM_AGENT; i++ {
 		localIpList = append(localIpList, fmt.Sprintf("10.10.10.%d", (i+1)))
 	}
